@@ -2,7 +2,7 @@ from pathlib import Path
 
 import folder_paths
 
-from .audio8_paths import local_model_path
+from .audio8_paths import available_models, local_model_path
 from .audio8_runtime import load_model, encode_reference, generate
 from .voice_presets import save_voice, load_voice, voice_signature
 
@@ -10,6 +10,10 @@ from .voice_presets import save_voice, load_voice, voice_signature
 class Audio8ModelLoader:
     @classmethod
     def INPUT_TYPES(cls):
+        try:
+            models = available_models()
+        except Exception:
+            models = []
         return {"required": {
             "dtype": (["auto", "bfloat16", "float16", "float32", "int8_convrot"], {
                 "tooltip": "int8_convrot loads bfloat16 activations and stores the language "
@@ -21,23 +25,37 @@ class Audio8ModelLoader:
                            "and with comfy_ops off (comfy_ops is ignored with a warning for "
                            "quantised models)."
                            " A swapped checkpoint directory is detected and reloads."}),
+        }, "optional": {
+            "model_name": (["auto"] + [m for m in models if m != "auto"], {
+                "default": "auto",
+                "tooltip": "Audio8 model directories found under the registered "
+                           "audio8_tts folders (models/audio8_tts plus any "
+                           "extra_model_paths.yaml entry); a directory qualifies "
+                           "by containing config.json. 'auto' uses the default "
+                           "Audio8-TTS-Realistic-0.6b, or the only model found."}),
         }}
 
     @classmethod
-    def IS_CHANGED(cls, dtype="auto"):
+    def IS_CHANGED(cls, dtype="auto", model_name="auto"):
         # The model path is fixed per installation, so a replaced checkpoint would
         # otherwise keep serving from the node cache forever. The directory holds a
         # handful of files; stat-ing them per queue check is cheap.
-        files = [p for p in local_model_path().rglob("*") if p.is_file()]
-        return (dtype, len(files), sum(p.stat().st_size for p in files),
+        try:
+            target = local_model_path(model_name)
+            files = [p for p in target.rglob("*") if p.is_file()]
+        except Exception:
+            # Nothing resolvable (or not yet placed): fall back to the root list,
+            # so adding or remodelling one still invalidates the cache.
+            return (dtype, model_name, "unresolved")
+        return (dtype, model_name, len(files), sum(p.stat().st_size for p in files),
                 max((p.stat().st_mtime for p in files), default=0.0))
 
     RETURN_TYPES = ("AUDIO8_MODEL",)
     FUNCTION = "load"
     CATEGORY = "audio/audio8"
 
-    def load(self, dtype="auto"):
-        return (load_model(dtype),)
+    def load(self, dtype="auto", model_name="auto"):
+        return (load_model(dtype, model_name),)
 
 
 class Audio8EncodeReference:

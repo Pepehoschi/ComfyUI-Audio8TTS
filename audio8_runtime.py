@@ -58,16 +58,16 @@ def check_transformers_version():
         )
 
 
-def load_model(dtype="auto"):
+def load_model(dtype="auto", model_name="auto"):
     check_transformers_version()
-    model_path = local_model_path()
+    model_path = local_model_path(model_name)
     device = comfy.model_management.get_torch_device()
     dtypes = {"auto": torch.bfloat16, "bfloat16": torch.bfloat16,
               "float16": torch.float16, "float32": torch.float32}
     if dtype not in dtypes and dtype != INT8_CONVROT:
         raise ValueError(f"[Audio8] Unknown dtype: {dtype}")
     compute_dtype = torch.float32 if device.type == "cpu" else dtypes.get(dtype, torch.bfloat16)
-    logger.info("[Audio8] Loading %s as %s on %s", MODEL_ID, compute_dtype, device)
+    logger.info("[Audio8] Loading %s from %s as %s on %s", MODEL_ID, model_path, compute_dtype, device)
     processor = AutoProcessor.from_pretrained(
         str(model_path), trust_remote_code=True, local_files_only=True,
     )

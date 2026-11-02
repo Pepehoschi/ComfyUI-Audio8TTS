@@ -14,6 +14,8 @@ Place the complete model, including its custom Python files, tokenizer, weights 
 ComfyUI/models/audio8_tts/Audio8-TTS-Realistic-0.6b/
 ```
 
+The loader looks in every folder registered under the `audio8_tts` template, so ComfyUI's standard mechanism for custom locations applies as it does for the built-in loaders: put `audio8_tts: D:\YourModels\audio8_tts` in `extra_model_paths.yaml` and any model directory (a folder containing `config.json` and `codec.pth`, also one level nested) below it becomes selectable. The Model Loader's optional `model_name` input lists the discovered directories; `auto` prefers the default `Audio8-TTS-Realistic-0.6b`, falls back to the only model found, and asks for a selection when several exist.
+
 The loader uses local files only. Audio8's supplied Python code is loaded with `trust_remote_code=True`; use model files from a trusted source.
 
 ## Nodes
