@@ -1,0 +1,40 @@
+# Line endings
+#
+# Every source file in this package is authored by Python tooling that writes LF,
+# and ComfyUI loads .py and .json regardless of the platform line ending.
+# Pinning the known text types to LF keeps the repository normalized and every
+# checkout byte-identical, independent of each clone's core.autocrlf setting.
+# Without this file a Windows clone with core.autocrlf=true rewrites the
+# worktree to CRLF and reports every file as modified on the next touch.
+* text=auto
+*.py text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+
+# Payload safety
+#
+# Weights, voice presets, audio and image assets must never pass through a
+# text conversion. None of them are tracked today, but workflows, benchmark
+# output and example assets are expected to be added to this package.
+*.safetensors binary
+*.pth binary
+*.pt binary
+*.ckpt binary
+*.bin binary
+*.wav binary
+*.flac binary
+*.mp3 binary
+*.ogg binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.mp4 binary
+*.zip binary
+
+# Show the enclosing function in Python diff hunk headers (built-in driver).
+*.py diff=python
