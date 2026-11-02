@@ -33,12 +33,21 @@ class _FastDecoderGraph:
             stream = torch.cuda.Stream(device=hidden.device)
             stream.wait_stream(torch.cuda.current_stream(hidden.device))
             with torch.cuda.stream(stream):
-                for _ in range(2):
-                    compute(static_input)
+                compute(static_input)
+                # The kept warmup result becomes the output buffer itself, so it is a
+                # plain allocation outside the graph pool: replays write through it and
+                # nothing in the pool ever needs an uncaptured free. Handing a pool
+                # tensor to the caller instead costs one "uncaptured free of a captured
+                # allocation" warning per output tensor on every teardown.
+                output = compute(static_input)
             torch.cuda.current_stream(hidden.device).wait_stream(stream)
+
+            def write_outputs():
+                output.copy_(compute(static_input))
+
             graph = torch.cuda.CUDAGraph()
             with torch.cuda.graph(graph):
-                output = compute(static_input)
+                write_outputs()
             # Captured metadata must stay alive for every replay in this generate call.
             self.captured = (graph, static_input, output, cache_position, key_mask)
         graph, static_input, output, cache_position, _ = self.captured
@@ -81,12 +90,23 @@ class _SlowDecodeGraph:
         stream = torch.cuda.Stream(device=device)
         stream.wait_stream(torch.cuda.current_stream(device))
         with torch.cuda.stream(stream):
-            for _ in range(2):
-                compute()
+            compute()
+            # The kept warmup result becomes the output buffers themselves: plain
+            # allocations outside the graph pool, so replays write through them and
+            # no pool tensor ever reaches the caller for an uncaptured free.
+            outputs = compute()
         torch.cuda.current_stream(device).wait_stream(stream)
+
+        # Capture-time temporaries must die inside the capture region: this nested
+        # frame is gone before capture ends, keeping pool frees recorded in-graph.
+        def write_outputs():
+            captured = compute()
+            for buffer, value in zip(outputs, captured):
+                buffer.copy_(value)
+
         graph = torch.cuda.CUDAGraph()
         with torch.cuda.graph(graph):
-            outputs = compute()
+            write_outputs()
         # Statics and outputs must stay allocated for every replay in this generate call.
         self.captured = (graph, statics, outputs)
         return self.captured
@@ -185,15 +205,22 @@ class _CodebookChainGraph:
         stream = torch.cuda.Stream(device=device)
         stream.wait_stream(torch.cuda.current_stream(device))
         with torch.cuda.stream(stream):
-            for _ in range(2):
-                compute()
+            compute()
+            # Kept warmup result doubles as the external output buffer, same as the
+            # other graphs: no pool tensor is handed out, so teardown frees nothing
+            # that cudaMallocAsync would call an uncaptured free.
+            outputs = compute()
         torch.cuda.current_stream(device).wait_stream(stream)
+
+        def write_outputs():
+            outputs.copy_(compute())
+
         graph = torch.cuda.CUDAGraph()
         if do_sample and generator is not None:
             # The chain samples inside the graph, so its generator has to be part of it.
             graph.register_generator_state(generator)
         with torch.cuda.graph(graph):
-            outputs = compute()
+            write_outputs()
         self.captured = (graph, statics, outputs)
         return self.captured
 
