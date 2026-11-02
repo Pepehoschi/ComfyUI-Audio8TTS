@@ -12,7 +12,8 @@ import comfy.audio
 import comfy.utils
 
 from .audio8_paths import local_model_path
-from .audio8_acceleration import cuda_graph_fast_decode
+from .audio8_acceleration import (GRAPH_SCOPES, cuda_graph_fast_decode,
+                                   cuda_graph_frame_decode)
 from .audio8_comfy import comfy_audio8_ops
 from .audio8_chunking import split_text
 from .audio8_types import Audio8ModelBundle, Audio8Reference, MODEL_ID, validate_reference
@@ -80,17 +81,21 @@ def encode_reference(bundle, audio, reference_text):
     return validate_reference(reference)
 
 
-def _model_generate(bundle, inputs, max_new_tokens, settings, cuda_graphs, comfy_ops, attention_backend="auto"):
+def _model_generate(bundle, inputs, max_new_tokens, settings, cuda_graphs, comfy_ops, attention_backend="auto",
+                    cuda_graph_scope="fast"):
     with ExitStack() as stack:
         if comfy_ops:
             stack.enter_context(comfy_audio8_ops(bundle, attention_backend=attention_backend))
         if cuda_graphs:
-            stack.enter_context(cuda_graph_fast_decode(bundle))
+            if cuda_graph_scope == "frame":
+                stack.enter_context(cuda_graph_frame_decode(bundle, max_new_tokens))
+            else:
+                stack.enter_context(cuda_graph_fast_decode(bundle))
         return bundle.model.generate(**inputs, max_new_tokens=max_new_tokens, **settings)
 
 
 def _generate_utterance(bundle, text, reference, max_new_tokens, retry_max_new_tokens, settings, fade_out_ms,
-                        cuda_graphs, comfy_ops, attention_backend):
+                        cuda_graphs, comfy_ops, attention_backend, cuda_graph_scope="fast"):
     kwargs = {}
     if reference is not None:
         validate_reference(reference)
@@ -98,11 +103,12 @@ def _generate_utterance(bundle, text, reference, max_new_tokens, retry_max_new_t
                   "reference_text": [reference.reference_text]}
     inputs = bundle.processor(text=[text], return_tensors="pt", **kwargs)
     inputs = {key: value.to(bundle.device) for key, value in inputs.items()}
-    output = _model_generate(bundle, inputs, max_new_tokens, settings, cuda_graphs, comfy_ops, attention_backend)
+    output = _model_generate(bundle, inputs, max_new_tokens, settings, cuda_graphs, comfy_ops, attention_backend,
+                             cuda_graph_scope)
     if not bool(output.finished[0]) and retry_max_new_tokens > max_new_tokens:
         logger.info("[Audio8] No EOS; retrying with %d tokens", retry_max_new_tokens)
         output = _model_generate(bundle, inputs, retry_max_new_tokens, settings, cuda_graphs, comfy_ops,
-                                 attention_backend)
+                                 attention_backend, cuda_graph_scope)
     length = int(output.code_lengths[0])
     if length <= 0:
         raise RuntimeError("[Audio8] Generation produced no valid codec frames")
@@ -129,7 +135,9 @@ def generate(bundle, text, reference=None, seed=42, max_new_tokens=1024,
              temperature=0.8, top_p=0.95, top_k=50, greedy=False, retry_max_new_tokens=2000,
              chunking="auto", target_chunk_chars=130, max_chunk_chars=150,
              sentence_pause_ms=180, paragraph_pause_ms=350, fade_out_ms=5.0, cuda_graphs=False,
-             comfy_ops=False, attention_backend="auto"):
+             comfy_ops=False, attention_backend="auto", cuda_graph_scope="fast"):
+    if cuda_graph_scope not in GRAPH_SCOPES:
+        raise ValueError(f"[Audio8] Unknown cuda_graph_scope: {cuda_graph_scope!r}")
     cuda_graphs = cuda_graphs and bundle.device.type == "cuda"
     generator = torch.Generator(device=bundle.device).manual_seed(seed)
     settings = dict(temperature=temperature, top_p=top_p, top_k=top_k,
@@ -137,7 +145,7 @@ def generate(bundle, text, reference=None, seed=42, max_new_tokens=1024,
     if chunking == "disabled" or len(text) <= max_chunk_chars or not text.strip():
         waveform = _generate_utterance(bundle, text, reference, max_new_tokens,
                                        retry_max_new_tokens, settings, fade_out_ms, cuda_graphs, comfy_ops,
-                                       attention_backend)
+                                       attention_backend, cuda_graph_scope)
     else:
         chunks = split_text(text, target_chunk_chars, max_chunk_chars,
                             sentence_pause_ms, paragraph_pause_ms)
@@ -149,7 +157,7 @@ def generate(bundle, text, reference=None, seed=42, max_new_tokens=1024,
             try:
                 part = _generate_utterance(bundle, chunk.text, reference, max_new_tokens,
                                           retry_max_new_tokens, settings, fade_out_ms, cuda_graphs, comfy_ops,
-                                          attention_backend)
+                                          attention_backend, cuda_graph_scope)
             except Exception as exc:
                 raise RuntimeError(
                     f"[Audio8] Generation failed for chunk {index}/{len(chunks)}: {chunk.text[:80]!r}"

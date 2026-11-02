@@ -104,6 +104,9 @@ class Audio8TTS:
                                       "tooltip": "Fade out the end of each chunk before its pause. Set 0 to disable."}),
             "cuda_graphs": ("BOOLEAN", {"default": False,
                                         "tooltip": "Replay the fast decoder with CUDA Graphs. CUDA only; graph setup may outweigh savings on very short text."}),
+            "cuda_graph_scope": (["fast", "frame"], {
+                "default": "fast",
+                "tooltip": "With cuda_graphs enabled. \"fast\" replays the fast decoder only. \"frame\" replays the whole frame, slow decode step and codebook chain together, measured about three times faster; it needs more graph memory and samples different codes for the same seed."}),
             "comfy_ops": ("BOOLEAN", {"default": False,
                                       "tooltip": "Use shared ComfyUI layers, rotary encoding and selected attention backend. Floating-point results can differ from the original model."}),
             "attention_backend": (["auto", "flash", "comfy_kitchen_int8"], {

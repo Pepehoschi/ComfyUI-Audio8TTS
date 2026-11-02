@@ -63,9 +63,11 @@ Enable `comfy_ops=True`, `cuda_graphs=True` and `attention_backend=flash` for th
 
 `benchmarks/compare_attention.py --profile --output <directory>` performs the interleaved attention comparison and records CUDA kernel evidence. `benchmarks/attention_backends.py` measures the registered implementations at representative Audio8 attention shapes.
 
-After restarting ComfyUI, enable the optional `cuda_graphs` input on Audio8 TTS to replay its fast decoder with CUDA Graphs. It defaults to off and is ignored on CPU. The patch uses ComfyUI's ModelPatcher, preserves sampling, and releases graph tensors after each generation attempt; retries and chunks receive fresh graphs. It requires no Torch update or additional dependencies. Capture has an upfront cost, so very short outputs can benefit less.
+After restarting ComfyUI, enable the optional `cuda_graphs` input on Audio8 TTS to replay its decoder with CUDA Graphs. It defaults to off and is ignored on CPU. `cuda_graph_scope` selects the extent: `fast` (default) replays only the fast decoder, `frame` replays the whole frame, so one frame becomes two graph replays. The patch uses ComfyUI's ModelPatcher, preserves sampling, and releases graph tensors after each generation attempt; retries and chunks receive fresh graphs. It requires no Torch update or additional dependencies. Capture has an upfront cost, so very short outputs can benefit less.
 
 On the local RTX 4090 / Torch 2.8.0+cu128 / BF16 setup, a 75-frame utterance took a median 5.00 seconds with the standard path and 2.95 seconds with CUDA Graphs (two runs each, model already loaded, graph capture included). Generated codes were exactly equal. These are generation timings; initial model/codec loading and audio saving are separate.
+
+Measured again on the same setup with 96 tokens and greedy decoding, so all three variants are directly comparable: 17.21 s without graphs, 8.28 s with `cuda_graph_scope=fast`, 2.82 s with `frame`. Generated codes stayed exactly equal to the ungraphed path. With the node default sampling the same comparison was 8.64 s without graphs against 1.99 s with `frame`. Sampling draws its random numbers inside the graph, so one seed yields other codes than the ungraphed path while a different seed still changes the output. `frame` reserves more graph memory per generation attempt.
 
 `benchmarks/profile_generation.py` records a reproducible local benchmark and optional CPU/CUDA operator profile. It defaults to the local `Audio8-Referenz.safetensors` voice and never downloads weights:
 
