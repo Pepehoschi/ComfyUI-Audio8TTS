@@ -244,8 +244,13 @@ def comfy_audio8_ops(bundle, attention_backend="auto"):
         _patch_block(patcher, f"fast_layers.{index}", block)
 
     try:
+        # Backends other than "auto" install a decode attention that drops the mask and
+        # trims key/value to the mask width instead. CUDA graphs pad that mask, so this
+        # fact has to be visible to the graph layer.
+        model.audio8_maskless_decode = attention_backend != "auto"
         patcher.patch_model(load_weights=False)
         yield
     finally:
         patcher.unpatch_model(unpatch_weights=False)
         patcher.object_patches.clear()
+        model.audio8_maskless_decode = False

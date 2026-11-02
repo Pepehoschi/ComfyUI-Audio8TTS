@@ -57,7 +57,7 @@ Five interleaved runs on the RTX 4090, 32 fixed frames and graph setup included:
 | Comfy operations, Flash + CUDA Graphs | 1.056 s |
 | Comfy operations, Kitchen INT8 + CUDA Graphs | 1.098 s |
 
-Enable `comfy_ops=True`, `cuda_graphs=True` and `attention_backend=flash` for the fastest measured setting here; choose `comfy_kitchen_int8` to use Kitchen attention. Defaults remain unchanged, and outputs can differ numerically between backends. Model/codec loading and audio saving are outside these generation timings.
+For speed without changing the sound, keep `comfy_ops=False` and use `cuda_graphs=True` with `cuda_graph_scope="frame"`: measured about four times faster and bit-identical audio. The attention backends add little on top and change the result: `flash` and `comfy_kitchen_int8` alter the sampled trajectory, and Kitchen INT8 quantises query, key and value. `cuda_graph_scope="frame"` is deliberately not combined with those two backends, the node logs a warning and falls back to `"fast"`. Model/codec loading and audio saving are outside these generation timings.
 
 `benchmarks/native_ops.py --output <directory>` compares prefill results and four variants (original/native, with/without CUDA Graphs), writes timings to JSON and produces comparison WAV files. It loads only local model and voice files.
 
@@ -68,6 +68,8 @@ After restarting ComfyUI, enable the optional `cuda_graphs` input on Audio8 TTS 
 On the local RTX 4090 / Torch 2.8.0+cu128 / BF16 setup, a 75-frame utterance took a median 5.00 seconds with the standard path and 2.95 seconds with CUDA Graphs (two runs each, model already loaded, graph capture included). Generated codes were exactly equal. These are generation timings; initial model/codec loading and audio saving are separate.
 
 Measured again on the same setup with 96 tokens and greedy decoding, so all three variants are directly comparable: 17.21 s without graphs, 8.28 s with `cuda_graph_scope=fast`, 2.82 s with `frame`. Generated codes stayed exactly equal to the ungraphed path. With the node default sampling the same comparison was 8.64 s without graphs against 1.99 s with `frame`. Sampling draws its random numbers inside the graph, so one seed yields other codes than the ungraphed path while a different seed still changes the output. `frame` reserves more graph memory per generation attempt.
+
+Verified end to end through the running server, saved audio measured instead of codes (256 token budget, same text and seed, model and voice cached): 13.7 tokens/s without graphs, 53.9 with `cuda_graph_scope="frame"`, 28.0 with `comfy_ops=True attention_backend=flash` and `"fast"`. The three configurations without a maskless attention backend produced **bit-identical waveforms**, repeats included. High frequency energy of every clean sample sat between 0.22 and 0.28, so a listener comparison is meaningful; `frame` reserves more graph memory per generation attempt.
 
 `benchmarks/profile_generation.py` records a reproducible local benchmark and optional CPU/CUDA operator profile. It defaults to the local `Audio8-Referenz.safetensors` voice and never downloads weights:
 

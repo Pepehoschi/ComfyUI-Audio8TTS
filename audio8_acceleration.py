@@ -238,7 +238,21 @@ def cuda_graph_frame_decode(bundle, max_new_tokens):
     Graph pools are created per generate call and released on exit. Greedy decoding
     reproduces the eager code sequence exactly; sampling draws its random numbers from
     the generator inside the graph, so one seed yields other codes than the eager path.
+
+    The slow-step graph pads its static attention mask to the widest key length of this
+    call. That is only safe while the causal mask is still applied. A Comfy attention
+    backend that masks single-token decode by trimming keys would instead expose future
+    cache slots, which measurably corrupts audio, so that combination falls back.
     """
+    if getattr(bundle.model, "audio8_maskless_decode", False):
+        logger.warning('[Audio8] cuda_graph_scope="frame" is not combined with a Comfy '
+                       "attention backend that drops the decode mask: the padded graph mask "
+                       "would reveal future cache slots. Falling back to "
+                       'cuda_graph_scope="fast".')
+        with cuda_graph_fast_decode(bundle):
+            yield
+        return
+
     patcher = comfy.model_patcher.ModelPatcher(bundle.model, bundle.device, torch.device("cpu"))
     slow = _SlowDecodeGraph(bundle.model, bundle.model._slow_step, max_new_tokens)
     chain = _CodebookChainGraph(bundle.model, bundle.model._generate_codebooks)
