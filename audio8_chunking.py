@@ -39,14 +39,25 @@ def _split_paragraph(text: str, target: int, maximum: int) -> list[str]:
     while len(remaining) > maximum:
         available = _boundaries(remaining[:maximum])
         if available:
-            highest_priority = max(priority for _, priority in available)
-            preferred = [
-                offset for offset, priority in available
-                if priority == highest_priority and offset >= target
-            ]
-            if preferred:
-                cut = min(preferred)
+            # Cut-point order: a strong boundary (sentence or subsentence) at or
+            # beyond the target, then a strong one that is at least half the
+            # target, then any boundary at or beyond the target. Only when the
+            # window offers none of those fall back to the strongest boundary
+            # anywhere; a strong boundary far before the target must not steal
+            # the cut from a boundary near the target ("v1. " + 400 words).
+            strong = [(offset, priority) for offset, priority in available if priority >= 2]
+            far_strong = [(offset, priority) for offset, priority in strong if offset >= target]
+            decent = [offset for offset, _ in strong if offset * 2 >= target]
+            far_any = [offset for offset, _ in available if offset >= target]
+            if far_strong:
+                best_priority = max(priority for _, priority in far_strong)
+                cut = min(offset for offset, priority in far_strong if priority == best_priority)
+            elif decent:
+                cut = max(decent)
+            elif far_any:
+                cut = min(far_any)
             else:
+                highest_priority = max(priority for _, priority in available)
                 cut = max(offset for offset, priority in available if priority == highest_priority)
         else:
             cut = maximum

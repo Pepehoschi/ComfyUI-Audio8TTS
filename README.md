@@ -36,7 +36,7 @@ The corrected CUDA/BF16 path passes repeated-encoding, preset-roundtrip and Dire
 
 Long-text defaults are 130 target / 150 maximum characters, 180 ms between chunks and 350 ms at paragraph boundaries. One generator advances through the whole run, including retries. Reference codes are reused across chunks. Short text keeps the direct path; `chunking=disabled` sends the whole text to Audio8. Each decoded chunk receives a 5 ms fade-out before its pause; optional `fade_out_ms=0` disables it. Audio length is preserved. No trailing pause or automatic crossfade is added.
 
-The example files in `examples/` are API prompt graphs, not frontend canvas workflows. `text_to_speech.api.json` synthesizes text, `save_voice.api.json` encodes and saves a reference, and `saved_voice_tts.api.json` loads a saved voice. Replace the example audio filename and transcript with matching local data. A saved-voice graph has completed on the local ComfyUI server and saved FLAC through Save Audio. A second request reused the cached loader and voice nodes. An actual server restart remains unverified.
+The remaining example files in `examples/` are API prompt graphs, not frontend canvas workflows; `Audio8-Start.json` above is the only canvas file. `text_to_speech.api.json` synthesizes text, `save_voice.api.json` encodes and saves a reference, and `saved_voice_tts.api.json` loads a saved voice. Replace the example audio filename and transcript with matching local data. A saved-voice graph has completed on the local ComfyUI server and saved FLAC through Save Audio. A second request reused the cached loader and voice nodes. An actual server restart remains unverified.
 
 ## Performance
 
@@ -98,4 +98,14 @@ $env:AUDIO8_TEST_TRANSCRIPT = 'Exact words spoken in the reference recording.'
 
 That test uses the existing SoundFile installation to read the reference, checks the preset roundtrip and compares generated codes for direct versus cached reference conditioning with greedy decoding. It performs no model downloads.
 
-See [PROGRESS.md](PROGRESS.md) for the current state and [InplementationPlan.md](InplementationPlan.md) for remaining work.
+See [PROGRESS.md](PROGRESS.md) for the current state and [ImplementationPlan.md](ImplementationPlan.md) for remaining work.
+
+## Limitations
+
+- ComfyUI cancellation takes effect between text chunks; a generation that already
+  started runs to its end.
+- Model, processor and codec stay in the node cache, not in ComfyUI's memory manager:
+  unload and empty-cache operations do not release them, and their VRAM is invisible
+  to ComfyUI's memory accounting until the process exits.
+- The model loader reloads when the checkpoint directory changes (file count, total
+  size or newest modification time); a swapped checkpoint is picked up on the next run.

@@ -17,10 +17,36 @@ from .audio8_acceleration import (GRAPH_SCOPES, cuda_graph_fast_decode,
                                    cuda_graph_frame_decode)
 from .audio8_comfy import comfy_audio8_ops
 from .audio8_chunking import split_text
-from .audio8_types import Audio8ModelBundle, Audio8Reference, MODEL_ID, validate_reference
+from .audio8_types import (Audio8ModelBundle, Audio8Reference, MODEL_ID,
+                           CODEC_SAMPLE_RATE, NUM_CODEBOOKS, CODEBOOK_SIZE,
+                           validate_reference)
 
 
 logger = logging.getLogger(__name__)
+
+# Constants the nodes were written and validated against; the checkpoint config
+# is compared with them at load so an incompatible model fails loudly instead
+# of producing subtly wrong audio.
+EXPECTED_CONFIG = {
+    "model_type": "arktts",
+    "codec_sample_rate": CODEC_SAMPLE_RATE,
+    "num_codebooks": NUM_CODEBOOKS,
+    "codebook_size": CODEBOOK_SIZE,
+}
+
+
+def validate_model_config(config, model_path):
+    """Abort when the checkpoint config contradicts the integration constants."""
+
+    mismatches = [
+        f"{key}: expected {expected!r}, config reports {getattr(config, key, None)!r}"
+        for key, expected in EXPECTED_CONFIG.items()
+        if getattr(config, key, None) != expected
+    ]
+    if mismatches:
+        raise RuntimeError(
+            "[Audio8] Model incompatible with this integration ("
+            + "; ".join(mismatches) + f"). Checkpoint directory: {model_path}")
 
 
 def check_transformers_version():
@@ -51,6 +77,7 @@ def load_model(dtype="auto"):
     # Transformers 5 materializes non-persistent buffers without their constructor values.
     precompute_rope = import_module(type(model).__module__)._precompute_rope
     config = model.config
+    validate_model_config(config, model_path)
     model.freqs_cis = precompute_rope(config.max_seq_len, config.head_dim, config.rope_base)
     model.fast_freqs_cis = precompute_rope(config.num_codebooks, config.fast_head_dim, config.rope_base)
     model.eval()
@@ -104,6 +131,14 @@ def _model_generate(bundle, inputs, max_new_tokens, settings, cuda_graphs, comfy
         return bundle.model.generate(**inputs, max_new_tokens=max_new_tokens, **settings)
 
 
+def _effective_retry_budget(max_seq_len, prompt_tokens, requested):
+    """Upstream caps any generate request to max_seq_len minus the prompt length."""
+
+    if max_seq_len <= 0 or prompt_tokens <= 0:
+        return requested
+    return min(requested, max_seq_len - prompt_tokens)
+
+
 def _generate_utterance(bundle, text, reference, max_new_tokens, retry_max_new_tokens, settings, fade_out_ms,
                         cuda_graphs, comfy_ops, attention_backend, cuda_graph_scope="fast"):
     kwargs = {}
@@ -116,9 +151,17 @@ def _generate_utterance(bundle, text, reference, max_new_tokens, retry_max_new_t
     output = _model_generate(bundle, inputs, max_new_tokens, settings, cuda_graphs, comfy_ops, attention_backend,
                              cuda_graph_scope)
     if not bool(output.finished[0]) and retry_max_new_tokens > max_new_tokens:
-        logger.info("[Audio8] No EOS; retrying with %d tokens", retry_max_new_tokens)
-        output = _model_generate(bundle, inputs, retry_max_new_tokens, settings, cuda_graphs, comfy_ops,
-                                 attention_backend, cuda_graph_scope)
+        max_seq_len = int(getattr(getattr(bundle.model, "config", None), "max_seq_len", 0) or 0)
+        prompt_tokens = int(inputs["input_ids"].shape[-1]) if "input_ids" in inputs else 0
+        retry_budget = _effective_retry_budget(max_seq_len, prompt_tokens, retry_max_new_tokens)
+        if retry_budget != retry_max_new_tokens:
+            logger.info("[Audio8] Retry budget capped from %d to %d tokens "
+                        "(max_seq_len %d minus prompt %d)", retry_max_new_tokens,
+                        retry_budget, max_seq_len, prompt_tokens)
+        if retry_budget > max_new_tokens:
+            logger.info("[Audio8] No EOS; retrying with %d tokens", retry_budget)
+            output = _model_generate(bundle, inputs, retry_budget, settings, cuda_graphs, comfy_ops,
+                                     attention_backend, cuda_graph_scope)
     length = int(output.code_lengths[0])
     if length <= 0:
         raise RuntimeError("[Audio8] Generation produced no valid codec frames")
@@ -148,6 +191,8 @@ def generate(bundle, text, reference=None, seed=42, max_new_tokens=1024,
              comfy_ops=False, attention_backend="auto", cuda_graph_scope="fast"):
     if cuda_graph_scope not in GRAPH_SCOPES:
         raise ValueError(f"[Audio8] Unknown cuda_graph_scope: {cuda_graph_scope!r}")
+    if not text.strip():
+        raise ValueError("[Audio8] Text must not be empty")
     cuda_graphs = cuda_graphs and bundle.device.type == "cuda"
     generator = torch.Generator(device=bundle.device).manual_seed(seed)
     settings = dict(temperature=temperature, top_p=top_p, top_k=top_k,

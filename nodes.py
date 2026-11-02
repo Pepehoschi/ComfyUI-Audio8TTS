@@ -2,6 +2,7 @@ from pathlib import Path
 
 import folder_paths
 
+from .audio8_paths import local_model_path
 from .audio8_runtime import load_model, encode_reference, generate
 from .voice_presets import save_voice, load_voice, voice_signature
 
@@ -18,8 +19,18 @@ class Audio8ModelLoader:
                            "weights with audibly equivalent output on the standalone path; "
                            "generation is slower and was only verified without cuda_graphs "
                            "and with comfy_ops off (comfy_ops is ignored with a warning for "
-                           "quantised models)."}),
+                           "quantised models)."
+                           " A swapped checkpoint directory is detected and reloads."}),
         }}
+
+    @classmethod
+    def IS_CHANGED(cls, dtype="auto"):
+        # The model path is fixed per installation, so a replaced checkpoint would
+        # otherwise keep serving from the node cache forever. The directory holds a
+        # handful of files; stat-ing them per queue check is cheap.
+        files = [p for p in local_model_path().rglob("*") if p.is_file()]
+        return (dtype, len(files), sum(p.stat().st_size for p in files),
+                max((p.stat().st_mtime for p in files), default=0.0))
 
     RETURN_TYPES = ("AUDIO8_MODEL",)
     FUNCTION = "load"
@@ -102,7 +113,11 @@ class Audio8TTS:
             "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0}),
             "top_k": ("INT", {"default": 50, "min": 0}),
             "greedy": ("BOOLEAN", {"default": False}),
-            "retry_max_new_tokens": ("INT", {"default": 2000, "min": 0}),
+            "retry_max_new_tokens": ("INT", {
+                "default": 2000, "min": 0,
+                "tooltip": "Token budget for one retry when the first pass found no EOS. "
+                           "Upstream caps every request at max_seq_len (2048) minus the "
+                           "prompt length; the effective budget is logged when capped."}),
             "chunking": (["auto", "disabled"],),
             "target_chunk_chars": ("INT", {"default": 130, "min": 1}),
             "max_chunk_chars": ("INT", {"default": 150, "min": 1}),

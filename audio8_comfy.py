@@ -12,6 +12,8 @@ from comfy.ldm.modules.attention import (
     AttentionTensorContainer, ComfyAttention, get_attention_function, optimized_attention,
 )
 
+from .audio8_drift import check_step_sources
+
 
 operations = comfy.ops.disable_weight_init
 
@@ -120,8 +122,16 @@ def _patch_module(patcher, path, module):
         patcher.add_object_patch(path, _native_linear(module))
     elif isinstance(module, torch.nn.Embedding):
         patcher.add_object_patch(path, _native_embedding(module))
-    elif not isinstance(module, torch.nn.Identity):
+    elif isinstance(module, torch.nn.Identity):
+        return
+    elif hasattr(module, "weight") and hasattr(module, "eps"):
         patcher.add_object_patch(path, _native_rmsnorm(module))
+    else:
+        raise TypeError(
+            "[Audio8] comfy_ops cannot patch the module at "
+            f"'{path}' (type {type(module).__name__}): not a Linear, Embedding, "
+            "Identity or RMSNorm-like layer. Leave comfy_ops off or adapt this "
+            "integration to the model's layer types.")
 
 
 def _patch_attention(patcher, path, module, backend):
@@ -218,6 +228,7 @@ def comfy_audio8_ops(bundle, attention_backend="auto"):
     """Temporarily route Audio8 blocks through ComfyUI's shared operations."""
 
     model = bundle.model
+    check_step_sources(model)
     patcher = comfy.model_patcher.ModelPatcher(model, bundle.device, torch.device("cpu"))
     output_projection = operations.Linear(
         model.config.dim, model.config.vocab_size, bias=False,

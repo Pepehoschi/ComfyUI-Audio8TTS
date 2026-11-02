@@ -4,6 +4,8 @@ from contextlib import contextmanager
 import torch
 import comfy.model_patcher
 
+from .audio8_drift import check_step_sources
+
 
 logger = logging.getLogger(__name__)
 
@@ -246,6 +248,7 @@ class _CodebookChainGraph:
 
 @contextmanager
 def cuda_graph_fast_decode(bundle):
+    check_step_sources(bundle.model)
     patcher = comfy.model_patcher.ModelPatcher(bundle.model, bundle.device, torch.device("cpu"))
     graph = _FastDecoderGraph(bundle.model)
     patcher.add_object_patch("_fast_step", graph.step)
@@ -280,6 +283,7 @@ def cuda_graph_frame_decode(bundle, max_new_tokens):
             yield
         return
 
+    check_step_sources(bundle.model)
     patcher = comfy.model_patcher.ModelPatcher(bundle.model, bundle.device, torch.device("cpu"))
     slow = _SlowDecodeGraph(bundle.model, bundle.model._slow_step, max_new_tokens)
     chain = _CodebookChainGraph(bundle.model, bundle.model._generate_codebooks)
