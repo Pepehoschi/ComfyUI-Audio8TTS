@@ -1,0 +1,9 @@
+{
+  "1": {"class_type": "Audio8ModelLoader", "inputs": {"dtype": "auto"}},
+  "2": {"class_type": "LoadAudio", "inputs": {"audio": "reference.wav"}},
+  "3": {
+    "class_type": "Audio8EncodeReference",
+    "inputs": {"model": ["1", 0], "audio": ["2", 0], "reference_text": "Replace this with the exact transcript of reference.wav."}
+  },
+  "4": {"class_type": "Audio8SaveVoice", "inputs": {"reference": ["3", 0], "name": "voice"}}
+}
