@@ -23,6 +23,7 @@ class Audio8ModelBundle:
     device: torch.device
     dtype: torch.dtype
     sample_rate: int
+    quantization: str = "none"
 
 
 @dataclass

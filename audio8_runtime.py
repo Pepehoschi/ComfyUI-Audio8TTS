@@ -12,6 +12,7 @@ import comfy.audio
 import comfy.utils
 
 from .audio8_paths import local_model_path
+from .audio8_quantization import INT8_CONVROT, quantize_model_int8_convrot
 from .audio8_acceleration import (GRAPH_SCOPES, cuda_graph_fast_decode,
                                    cuda_graph_frame_decode)
 from .audio8_comfy import comfy_audio8_ops
@@ -37,9 +38,9 @@ def load_model(dtype="auto"):
     device = comfy.model_management.get_torch_device()
     dtypes = {"auto": torch.bfloat16, "bfloat16": torch.bfloat16,
               "float16": torch.float16, "float32": torch.float32}
-    if dtype not in dtypes:
+    if dtype not in dtypes and dtype != INT8_CONVROT:
         raise ValueError(f"[Audio8] Unknown dtype: {dtype}")
-    compute_dtype = torch.float32 if device.type == "cpu" else dtypes[dtype]
+    compute_dtype = torch.float32 if device.type == "cpu" else dtypes.get(dtype, torch.bfloat16)
     logger.info("[Audio8] Loading %s as %s on %s", MODEL_ID, compute_dtype, device)
     processor = AutoProcessor.from_pretrained(
         str(model_path), trust_remote_code=True, local_files_only=True,
@@ -54,8 +55,12 @@ def load_model(dtype="auto"):
     model.fast_freqs_cis = precompute_rope(config.num_codebooks, config.fast_head_dim, config.rope_base)
     model.eval()
     model.to(device)
+    quantization = "none"
+    if dtype == INT8_CONVROT:
+        quantize_model_int8_convrot(model)
+        quantization = INT8_CONVROT
     return Audio8ModelBundle(model, processor, MODEL_ID, device, compute_dtype,
-                             int(model.config.codec_sample_rate))
+                             int(model.config.codec_sample_rate), quantization=quantization)
 
 
 def reference_audio_values(audio, sample_rate):
@@ -83,6 +88,11 @@ def encode_reference(bundle, audio, reference_text):
 
 def _model_generate(bundle, inputs, max_new_tokens, settings, cuda_graphs, comfy_ops, attention_backend="auto",
                     cuda_graph_scope="fast"):
+    if comfy_ops and getattr(bundle.model, "audio8_int8_quantised", False):
+        logger.warning(
+            "[Audio8] Disabling comfy_ops: it re-patches the Linear layers and is incompatible "
+            "with int8_convrot weights.")
+        comfy_ops = False
     with ExitStack() as stack:
         if comfy_ops:
             stack.enter_context(comfy_audio8_ops(bundle, attention_backend=attention_backend))

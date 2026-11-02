@@ -9,7 +9,17 @@ from .voice_presets import save_voice, load_voice, voice_signature
 class Audio8ModelLoader:
     @classmethod
     def INPUT_TYPES(cls):
-        return {"required": {"dtype": (["auto", "bfloat16", "float16", "float32"],)}}
+        return {"required": {
+            "dtype": (["auto", "bfloat16", "float16", "float32", "int8_convrot"], {
+                "tooltip": "int8_convrot loads bfloat16 activations and stores the language "
+                           "model's nn.Linear weights as int8 with per-group rotation "
+                           "(comfy-kitchen TensorWiseINT8Layout, group 64); in_features not "
+                           "divisible by 64 stay float. Measured 803 -> 403 MiB of Linear "
+                           "weights with audibly equivalent output on the standalone path; "
+                           "generation is slower and was only verified without cuda_graphs "
+                           "and with comfy_ops off (comfy_ops is ignored with a warning for "
+                           "quantised models)."}),
+        }}
 
     RETURN_TYPES = ("AUDIO8_MODEL",)
     FUNCTION = "load"
