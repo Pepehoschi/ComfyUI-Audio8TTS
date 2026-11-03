@@ -6,6 +6,8 @@ Work in progress: native nodes for `Edge0/Audio8-TTS-Realistic-0.6b`.
 
 The project targets the existing ComfyUI cu128 installation. Do not separately install or replace Torch/Torchaudio.
 
+`requirements.txt` deliberately lists only `transformers>=4.57.0,<6` and `safetensors>=0.4`. Torch, Torchaudio and NumPy stay out on purpose: ComfyUI owns the PyTorch/CUDA build of its installation (cu128 here), and a pip-resolved `torch` entry would replace that build with a generic CUDA wheel and break the install. This boundary also applies to any future `pyproject.toml` for registry publishing - keep dependencies dynamic from `requirements.txt` and never add a torch-family entry. A test in `tests/test_comfy_contract.py` fails if a dependency file ever gains one.
+
 The integration supports Transformers `>=4.57.0,<6`. The complete local model, processor and codec have been tested with Transformers 5.9.0 and Torch 2.8.0+cu128 on an RTX 4090. No packages were changed. Model files were copied from the existing HuggingFace cache.
 
 Load an Audio8 **pack** - one `.safetensors` file - through the
