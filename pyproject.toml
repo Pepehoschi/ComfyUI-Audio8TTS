@@ -1,0 +1,21 @@
+[project]
+name = "comfyui-audio8tts"
+description = "Native ComfyUI nodes for Edge0/Audio8-TTS-Realistic-0.6b: single-file model packs (BF16 and INT8 ConvRot), zero-shot voice presets, tagged multi-voice TTS scripts, CUDA graph acceleration."
+version = "1.0.0"
+license = { file = "LICENSE" }
+# Keep in sync with requirements.txt. Never add torch, torchaudio or numpy:
+# ComfyUI owns the PyTorch/CUDA build of its installation and a pip-resolved
+# torch entry would replace it with a generic wheel.
+dependencies = [
+  "transformers>=4.57.0,<6",
+  "safetensors>=0.4",
+]
+
+[project.urls]
+Repository = "https://github.com/Pepehoschi/ComfyUI-Audio8TTS"
+Homepage = "https://github.com/Pepehoschi/ComfyUI-Audio8TTS"
+
+[tool.comfy]
+PublisherId = "pepehoschi"
+DisplayName = "Audio8 TTS"
+Banner = "https://raw.githubusercontent.com/Pepehoschi/ComfyUI-Audio8TTS/master/docs/registry_banner.png"

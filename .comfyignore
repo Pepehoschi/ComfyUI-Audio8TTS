@@ -1,0 +1,9 @@
+# Registry archive hygiene: the registry zips the repository; these are
+# development-only or externally served files. Keep example_workflows/,
+# web/, audio8_arch/ and all runtime modules.
+docs/
+hf/
+scripts/
+.github/
+__pycache__/
+*.py[cod]
