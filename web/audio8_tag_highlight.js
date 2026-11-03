@@ -26,6 +26,11 @@ const STYLE = `
 .audio8-tag-unknown { color:#b91c1c; }
 .audio8-tag-escape { color:#9ca3af; }
 .audio8-tag-src-hidden textarea.comfy-multiline-input { color:transparent; }
+/* Browsers repaint selected text with the selection's foreground colour
+   (white), which overrides our transparent text and shows a ghost copy
+   of the textarea glyphs under the mirror. Keep selection text
+   transparent: the highlight band stays, the white glyphs do not. */
+.audio8-tag-src-hidden textarea.comfy-multiline-input::selection { color:transparent; }
 `;
 
 function styleOnce() {
@@ -105,18 +110,20 @@ function paint(state) {
   inner.replaceChildren(fragment);
 }
 
-function copyFont(ta, mirror) {
+function copyFont(ta, mirror, color) {
   const cs = getComputedStyle(ta);
   for (const prop of ["fontFamily", "fontSize", "fontWeight", "fontStyle",
                       "lineHeight", "letterSpacing", "wordSpacing",
                       "whiteSpace", "wordBreak", "tabSize"]) {
     mirror.style[prop] = cs[prop];
   }
-  // color:transparent on the textarea also hides an auto caret; pin the
-  // caret colour and the mirror's plain-text colour to the real text
-  // colour captured before the transparent class applies.
-  ta.style.caretColor = cs.color;
-  mirror.style.color = cs.color;
+  // color:transparent on the textarea also hides an auto caret; the real
+  // text colour must come from the hook-time capture (state.textColor),
+  // because once the hidden class applies, the computed colour IS
+  // transparent and re-copying it would blank both caret and mirror.
+  const c = color || cs.color;
+  ta.style.caretColor = c;
+  mirror.style.color = c;
   mirror.style.boxSizing = "border-box";
 }
 
@@ -143,6 +150,7 @@ function syncBox(ta, mirror) {
 }
 
 const hookedElements = new WeakSet();
+const hookedStates = new Map();
 
 function scriptNodes() {
   const g = graph();
@@ -171,18 +179,28 @@ function hookWidget(node, widget) {
   const host = ta.parentElement || element;
   if (getComputedStyle(host).position === "static") host.style.position = "relative";
   host.prepend(mirror);
-  copyFont(ta, mirror);
+  // Capture the real text colour BEFORE the transparent class applies.
+  const textColor = getComputedStyle(ta).color;
+  copyFont(ta, mirror, textColor);
   host.classList.add("audio8-tag-src-hidden");
 
-  const state = { node, ta, inner, mirror };
+  const state = { node, ta, inner, mirror, textColor };
+  hookedStates.set(node, state);
   const repaint = () => {
-    try { syncBox(state.ta, state.mirror); paint(state); }
+    try {
+      // Re-copy the font every paint: the frontend may apply its final
+      // font after hooking (settings load, Vue restyle), and a frozen
+      // smaller font shows as a coloured glyph over a larger ghost one.
+      copyFont(ta, mirror, state.textColor);
+      syncBox(state.ta, state.mirror); paint(state);
+    }
     catch (err) { console.warn("[audio8-tag]", err); }
   };
   const resync = () => {
-    try { syncBox(state.ta, state.mirror); }
+    try { copyFont(state.ta, state.mirror, state.textColor); syncBox(state.ta, state.mirror); }
     catch (err) { console.warn("[audio8-tag]", err); }
   };
+  state.resync = resync;
   ta.addEventListener("input", repaint);
   ta.addEventListener("scroll", () => {
     inner.style.transform = `translate(${-ta.scrollLeft}px, ${-ta.scrollTop}px)`;
@@ -202,10 +220,19 @@ function hookWidget(node, widget) {
 }
 
 function scan() {
-  for (const node of scriptNodes()) {
+  const nodes = scriptNodes();
+  for (const node of nodes) {
     for (const widget of node.widgets || []) {
       if (widget.name === "text" && widget.element) hookWidget(node, widget);
     }
+    // Vue may swap the textarea's font after hooking (settings load,
+    // restyle); a stale mirror font shows as a size-mismatched coloured
+    // glyph over the native selection ghost. Re-fold font+box each tick.
+    const state = hookedStates.get(node);
+    if (state && state.ta.isConnected) state.resync();
+  }
+  for (const [node, state] of [...hookedStates]) {
+    if (!state.mirror.isConnected) hookedStates.delete(node);
   }
 }
 
