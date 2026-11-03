@@ -48,12 +48,12 @@
         "Node name for S&R": "Audio8ModelLoader"
       },
       "widgets_values": [
-        "audio8/Audio8-TTS-Realistic-0.6b.safetensors",
+        "audio8\\Audio8-TTS-Realistic-0.6b.safetensors",
         "auto"
       ],
       "widgets_values_named": {
         "dtype": "auto",
-        "ckpt_name": "audio8/Audio8-TTS-Realistic-0.6b.safetensors"
+        "ckpt_name": "audio8\\Audio8-TTS-Realistic-0.6b.safetensors"
       },
       "title": "Audio8 Modell laden (cu128)"
     },

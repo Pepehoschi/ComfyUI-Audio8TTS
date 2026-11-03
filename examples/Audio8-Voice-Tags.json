@@ -1,0 +1,846 @@
+{
+  "id": "db018917-2cd4-40f0-ac79-61e854acd736",
+  "revision": 0,
+  "last_node_id": 11,
+  "last_link_id": 9,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "Note",
+      "pos": [
+        -560,
+        40
+      ],
+      "size": [
+        140,
+        60
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "title": "How this workflow works",
+      "properties": {},
+      "widgets_values": [
+        "## Audio8 voice tags\n\nThe two Audio8 Voice Set Add nodes build a free tag -> voice dictionary. The tag string is arbitrary; it has no relationship to the voice file name. A duplicate tag is kept automatically as tag_1, tag_2, ... (see the log output of the Add node).\n\nIn the Audio8 Script text, [happy] switches the voice reference until the next tag. Text before the first tag uses the reference input of Audio8 TTS. [[ and ]] write literal brackets. Unknown [...] brackets stay in the spoken text and are listed as warnings in the log output. Tag boundaries are treated like paragraph pauses (paragraph_pause_ms).\n\nThe preset names Barbara_Happy / Barbara_Sad only exist on this machine. Create your own presets with Audio8 Encode Reference plus Audio8 Save Voice, then pick them in the two Load Voice nodes.\n\nKnown limitation: preset loudness carries over as-is; there is no volume normalisation between voices."
+      ],
+      "widgets_values_named": {
+        "text": "## Audio8 voice tags\n\nThe two Audio8 Voice Set Add nodes build a free tag -> voice dictionary. The tag string is arbitrary; it has no relationship to the voice file name. A duplicate tag is kept automatically as tag_1, tag_2, ... (see the log output of the Add node).\n\nIn the Audio8 Script text, [happy] switches the voice reference until the next tag. Text before the first tag uses the reference input of Audio8 TTS. [[ and ]] write literal brackets. Unknown [...] brackets stay in the spoken text and are listed as warnings in the log output. Tag boundaries are treated like paragraph pauses (paragraph_pause_ms).\n\nThe preset names Barbara_Happy / Barbara_Sad only exist on this machine. Create your own presets with Audio8 Encode Reference plus Audio8 Save Voice, then pick them in the two Load Voice nodes.\n\nKnown limitation: preset loudness carries over as-is; there is no volume normalisation between voices."
+      },
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 2,
+      "type": "Audio8ModelLoader",
+      "pos": [
+        0,
+        0
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "ckpt_name",
+          "name": "ckpt_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "ckpt_name"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "dtype",
+          "name": "dtype",
+          "type": "COMBO",
+          "widget": {
+            "name": "dtype"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "AUDIO8_MODEL",
+          "name": "AUDIO8_MODEL",
+          "type": "AUDIO8_MODEL",
+          "links": [
+            1
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "Audio8ModelLoader"
+      },
+      "widgets_values": [
+        "audio8\\Audio8-TTS-Realistic-0.6b.safetensors",
+        "auto"
+      ],
+      "widgets_values_named": {
+        "ckpt_name": "audio8\\Audio8-TTS-Realistic-0.6b.safetensors",
+        "dtype": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "type": "Audio8LoadVoice",
+      "pos": [
+        0,
+        180
+      ],
+      "size": [
+        270,
+        58
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "voice",
+          "name": "voice",
+          "type": "COMBO",
+          "widget": {
+            "name": "voice"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "AUDIO8_REFERENCE",
+          "name": "AUDIO8_REFERENCE",
+          "type": "AUDIO8_REFERENCE",
+          "links": [
+            3
+          ]
+        }
+      ],
+      "title": "Load Voice (happy tag)",
+      "properties": {
+        "Node name for S&R": "Audio8LoadVoice"
+      },
+      "widgets_values": [
+        "Barbara_Happy.safetensors"
+      ],
+      "widgets_values_named": {
+        "voice": "Barbara_Happy.safetensors"
+      }
+    },
+    {
+      "id": 4,
+      "type": "Audio8LoadVoice",
+      "pos": [
+        0,
+        320
+      ],
+      "size": [
+        270,
+        58
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "voice",
+          "name": "voice",
+          "type": "COMBO",
+          "widget": {
+            "name": "voice"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "AUDIO8_REFERENCE",
+          "name": "AUDIO8_REFERENCE",
+          "type": "AUDIO8_REFERENCE",
+          "links": [
+            5
+          ]
+        }
+      ],
+      "title": "Load Voice (sad tag)",
+      "properties": {
+        "Node name for S&R": "Audio8LoadVoice"
+      },
+      "widgets_values": [
+        "Barbara_Sad.safetensors"
+      ],
+      "widgets_values_named": {
+        "voice": "Barbara_Sad.safetensors"
+      }
+    },
+    {
+      "id": 5,
+      "type": "Audio8LoadVoice",
+      "pos": [
+        0,
+        460
+      ],
+      "size": [
+        270,
+        58
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "voice",
+          "name": "voice",
+          "type": "COMBO",
+          "widget": {
+            "name": "voice"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "AUDIO8_REFERENCE",
+          "name": "AUDIO8_REFERENCE",
+          "type": "AUDIO8_REFERENCE",
+          "links": [
+            8
+          ]
+        }
+      ],
+      "title": "Load Voice (default reference)",
+      "properties": {
+        "Node name for S&R": "Audio8LoadVoice"
+      },
+      "widgets_values": [
+        "Audio8-Referenz.safetensors"
+      ],
+      "widgets_values_named": {
+        "voice": "Audio8-Referenz.safetensors"
+      }
+    },
+    {
+      "id": 6,
+      "type": "Audio8VoiceSet",
+      "pos": [
+        380,
+        180
+      ],
+      "size": [
+        153.34921875,
+        26
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "localized_name": "voice_set",
+          "name": "voice_set",
+          "type": "AUDIO8_VOICE_SET",
+          "links": [
+            2
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "Audio8VoiceSet"
+      }
+    },
+    {
+      "id": 7,
+      "type": "Audio8VoiceSetAdd",
+      "pos": [
+        380,
+        300
+      ],
+      "size": [
+        270,
+        78
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "voice_set",
+          "name": "voice_set",
+          "type": "AUDIO8_VOICE_SET",
+          "link": 2
+        },
+        {
+          "localized_name": "voice",
+          "name": "voice",
+          "type": "AUDIO8_REFERENCE",
+          "link": 3
+        },
+        {
+          "localized_name": "tag",
+          "name": "tag",
+          "type": "STRING",
+          "widget": {
+            "name": "tag"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "voice_set",
+          "name": "voice_set",
+          "type": "AUDIO8_VOICE_SET",
+          "links": [
+            4
+          ]
+        },
+        {
+          "localized_name": "log",
+          "name": "log",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "title": "Add tag: happy",
+      "properties": {
+        "Node name for S&R": "Audio8VoiceSetAdd"
+      },
+      "widgets_values": [
+        "happy"
+      ],
+      "widgets_values_named": {
+        "tag": "happy"
+      }
+    },
+    {
+      "id": 8,
+      "type": "Audio8VoiceSetAdd",
+      "pos": [
+        380,
+        480
+      ],
+      "size": [
+        270,
+        78
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "voice_set",
+          "name": "voice_set",
+          "type": "AUDIO8_VOICE_SET",
+          "link": 4
+        },
+        {
+          "localized_name": "voice",
+          "name": "voice",
+          "type": "AUDIO8_REFERENCE",
+          "link": 5
+        },
+        {
+          "localized_name": "tag",
+          "name": "tag",
+          "type": "STRING",
+          "widget": {
+            "name": "tag"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "voice_set",
+          "name": "voice_set",
+          "type": "AUDIO8_VOICE_SET",
+          "links": [
+            6
+          ]
+        },
+        {
+          "localized_name": "log",
+          "name": "log",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "title": "Add tag: sad",
+      "properties": {
+        "Node name for S&R": "Audio8VoiceSetAdd"
+      },
+      "widgets_values": [
+        "sad"
+      ],
+      "widgets_values_named": {
+        "tag": "sad"
+      }
+    },
+    {
+      "id": 9,
+      "type": "Audio8Script",
+      "pos": [
+        740,
+        180
+      ],
+      "size": [
+        400,
+        200
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "voice_set",
+          "name": "voice_set",
+          "type": "AUDIO8_VOICE_SET",
+          "link": 6
+        },
+        {
+          "localized_name": "text",
+          "name": "text",
+          "type": "STRING",
+          "widget": {
+            "name": "text"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "script",
+          "name": "script",
+          "type": "AUDIO8_SCRIPT",
+          "links": [
+            7
+          ]
+        },
+        {
+          "localized_name": "log",
+          "name": "log",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "Audio8Script"
+      },
+      "widgets_values": [
+        "One November evening. [happy] The kitchen was warm and golden. [sad] The last train left without her."
+      ],
+      "widgets_values_named": {
+        "text": "One November evening. [happy] The kitchen was warm and golden. [sad] The last train left without her."
+      }
+    },
+    {
+      "id": 10,
+      "type": "Audio8TTS",
+      "pos": [
+        740,
+        500
+      ],
+      "size": [
+        400,
+        560
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "model",
+          "name": "model",
+          "type": "AUDIO8_MODEL",
+          "link": 1
+        },
+        {
+          "localized_name": "reference",
+          "name": "reference",
+          "shape": 7,
+          "type": "AUDIO8_REFERENCE",
+          "link": 8
+        },
+        {
+          "localized_name": "script",
+          "name": "script",
+          "shape": 7,
+          "type": "AUDIO8_SCRIPT",
+          "link": 7
+        },
+        {
+          "localized_name": "seed",
+          "name": "seed",
+          "type": "INT",
+          "widget": {
+            "name": "seed"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "max_new_tokens",
+          "name": "max_new_tokens",
+          "type": "INT",
+          "widget": {
+            "name": "max_new_tokens"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "temperature",
+          "name": "temperature",
+          "type": "FLOAT",
+          "widget": {
+            "name": "temperature"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "top_p",
+          "name": "top_p",
+          "type": "FLOAT",
+          "widget": {
+            "name": "top_p"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "top_k",
+          "name": "top_k",
+          "type": "INT",
+          "widget": {
+            "name": "top_k"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "greedy",
+          "name": "greedy",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "greedy"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "retry_max_new_tokens",
+          "name": "retry_max_new_tokens",
+          "type": "INT",
+          "widget": {
+            "name": "retry_max_new_tokens"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "chunking",
+          "name": "chunking",
+          "type": "COMBO",
+          "widget": {
+            "name": "chunking"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "target_chunk_chars",
+          "name": "target_chunk_chars",
+          "type": "INT",
+          "widget": {
+            "name": "target_chunk_chars"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "max_chunk_chars",
+          "name": "max_chunk_chars",
+          "type": "INT",
+          "widget": {
+            "name": "max_chunk_chars"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "sentence_pause_ms",
+          "name": "sentence_pause_ms",
+          "type": "INT",
+          "widget": {
+            "name": "sentence_pause_ms"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "paragraph_pause_ms",
+          "name": "paragraph_pause_ms",
+          "type": "INT",
+          "widget": {
+            "name": "paragraph_pause_ms"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "text",
+          "name": "text",
+          "shape": 7,
+          "type": "STRING",
+          "widget": {
+            "name": "text"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "fade_out_ms",
+          "name": "fade_out_ms",
+          "shape": 7,
+          "type": "FLOAT",
+          "widget": {
+            "name": "fade_out_ms"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "cuda_graphs",
+          "name": "cuda_graphs",
+          "shape": 7,
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "cuda_graphs"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "cuda_graph_scope",
+          "name": "cuda_graph_scope",
+          "shape": 7,
+          "type": "COMBO",
+          "widget": {
+            "name": "cuda_graph_scope"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "comfy_ops",
+          "name": "comfy_ops",
+          "shape": 7,
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "comfy_ops"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "attention_backend",
+          "name": "attention_backend",
+          "shape": 7,
+          "type": "COMBO",
+          "widget": {
+            "name": "attention_backend"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "AUDIO",
+          "name": "AUDIO",
+          "type": "AUDIO",
+          "links": [
+            9
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "Audio8TTS"
+      },
+      "widgets_values": [
+        42,
+        "fixed",
+        1024,
+        0.8,
+        0.95,
+        50,
+        false,
+        2000,
+        "auto",
+        130,
+        150,
+        180,
+        350,
+        "",
+        5,
+        false,
+        "fast",
+        false,
+        "auto"
+      ],
+      "widgets_values_named": {
+        "seed": 42,
+        "control_after_generate": "fixed",
+        "max_new_tokens": 1024,
+        "temperature": 0.8,
+        "top_p": 0.95,
+        "top_k": 50,
+        "greedy": false,
+        "retry_max_new_tokens": 2000,
+        "chunking": "auto",
+        "target_chunk_chars": 130,
+        "max_chunk_chars": 150,
+        "sentence_pause_ms": 180,
+        "paragraph_pause_ms": 350,
+        "text": "",
+        "fade_out_ms": 5,
+        "cuda_graphs": false,
+        "cuda_graph_scope": "fast",
+        "comfy_ops": false,
+        "attention_backend": "auto"
+      }
+    },
+    {
+      "id": 11,
+      "type": "SaveAudio",
+      "pos": [
+        1240,
+        500
+      ],
+      "size": [
+        329.2798828125,
+        112
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "audio",
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 9
+        },
+        {
+          "localized_name": "filename_prefix",
+          "name": "filename_prefix",
+          "type": "STRING",
+          "widget": {
+            "name": "filename_prefix"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "audioUI",
+          "name": "audioUI",
+          "type": "AUDIO_UI",
+          "widget": {
+            "name": "audioUI"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "audio",
+          "name": "audio",
+          "type": "AUDIO",
+          "links": null
+        }
+      ],
+      "title": "Save Audio",
+      "properties": {},
+      "widgets_values": [
+        "audio/Audio8-Voice-Tags"
+      ],
+      "widgets_values_named": {
+        "filename_prefix": "audio/Audio8-Voice-Tags"
+      }
+    }
+  ],
+  "links": [
+    [
+      1,
+      2,
+      0,
+      10,
+      0,
+      "AUDIO8_MODEL"
+    ],
+    [
+      2,
+      6,
+      0,
+      7,
+      0,
+      "AUDIO8_VOICE_SET"
+    ],
+    [
+      3,
+      3,
+      0,
+      7,
+      1,
+      "AUDIO8_REFERENCE"
+    ],
+    [
+      4,
+      7,
+      0,
+      8,
+      0,
+      "AUDIO8_VOICE_SET"
+    ],
+    [
+      5,
+      4,
+      0,
+      8,
+      1,
+      "AUDIO8_REFERENCE"
+    ],
+    [
+      6,
+      8,
+      0,
+      9,
+      0,
+      "AUDIO8_VOICE_SET"
+    ],
+    [
+      7,
+      9,
+      0,
+      10,
+      2,
+      "AUDIO8_SCRIPT"
+    ],
+    [
+      8,
+      5,
+      0,
+      10,
+      1,
+      "AUDIO8_REFERENCE"
+    ],
+    [
+      9,
+      10,
+      0,
+      11,
+      0,
+      "AUDIO"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.9,
+      "offset": [
+        416,
+        110
+      ]
+    }
+  },
+  "version": 0.4
+}
