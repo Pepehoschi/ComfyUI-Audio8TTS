@@ -671,9 +671,9 @@
         180,
         350,
         "",
-        5,
-        false,
-        "fast",
+        110,
+        true,
+        "frame",
         false,
         "auto"
       ],
@@ -692,9 +692,9 @@
         "sentence_pause_ms": 180,
         "paragraph_pause_ms": 350,
         "text": "",
-        "fade_out_ms": 5,
-        "cuda_graphs": false,
-        "cuda_graph_scope": "fast",
+        "fade_out_ms": 110,
+        "cuda_graphs": true,
+        "cuda_graph_scope": "frame",
         "comfy_ops": false,
         "attention_backend": "auto"
       }
