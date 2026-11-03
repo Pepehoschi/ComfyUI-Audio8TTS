@@ -21,7 +21,8 @@ serializes only the relative path into the workflow.
 Create a pack once from a complete model directory (the HuggingFace
 download form: `config.json`, `codec.pth`, weights, tokenizer and custom
 Python files) with the `Audio8 Pack Model` node. It writes the pack to
-the `audio8/` subfolder of the first `diffusion_models` root, e.g.:
+the `audio8/` subfolder of the `diffusion_models` root that already holds
+one, e.g.:
 
 ```text
 ComfyUI/models/diffusion_models/audio8/Audio8-TTS-Realistic-0.6b.safetensors
@@ -50,16 +51,20 @@ metadata key, so picking a foreign `.safetensors` (for example a real
 UNet from the same folder) fails early with a clear error. Verified
 sample-identical to the former directory path (maxdiff 0.0 against the
 BF16 anchor, through the native picker). The metadata key `audio8_quant`
-is reserved: pre-quantised int8-convrot packs will load through the same
-structure once implemented; until then loading such a pack fails with a
-clear error and `dtype=int8_convrot` keeps quantising on the fly.
+marks quantised packs: with `quantize="int8_convrot"` the Pack Model
+node writes a separate `…-int8convrot.safetensors` next to the BF16 pack,
+keeping each quantised `nn.Linear` as an int8 tensor plus a float32
+`.weight_scale` companion. The loader reinstalls those layouts directly
+(`dtype=auto` or `int8_convrot` both work), so nothing is requantised at
+load time and runs from such a pack are reproducible; measured
+sample-identical to on-the-fly `dtype=int8_convrot` (maxdiff 0.0).
 
 ## Nodes
 
 Load `examples/Audio8-Start.json` for a frontend canvas workflow (Model Loader, Load Voice, TTS, Save Audio). On this machine it selects `Audio8-Referenz.safetensors`, encoded from the supplied reference recording. Other installations must create their own voice preset first.
 
 - Audio8 Model Loader: shared model and processor; `ckpt_name` picker over the `diffusion_models` folders; CPU uses FP32.
-- Audio8 Pack Model: folds a model directory into one `.safetensors` pack under `audio8/` in the first `diffusion_models` folder.
+- Audio8 Pack Model: folds a model directory into one `.safetensors` pack under `audio8/` in the `diffusion_models` folder that already holds one; `quantize="int8_convrot"` writes a separate `…-int8convrot.safetensors`.
 - Audio8 Encode Reference: ComfyUI audio plus its transcript becomes reusable codec codes.
 - Audio8 Save Voice: atomically saves a reference under `models/audio8_voices/`.
 - Audio8 Load Voice: loads codes and transcript without the original audio file.
