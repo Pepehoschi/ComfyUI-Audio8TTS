@@ -39,6 +39,68 @@ class Audio8Reference:
     format_version: int = FORMAT_VERSION
 
 
+@dataclass(frozen=True)
+class VoiceSet:
+    """Ordered, free-form {tag -> reference} dictionary built by node chains.
+
+    Tags are arbitrary user strings; the only invariant is uniqueness, which
+    with_entry enforces by suffixing duplicates with _1, _2, ... in chain
+    order. There is deliberately no relationship checked between a tag and
+    its reference: any voice may carry any tag.
+    """
+
+    entries: tuple[tuple[str, Audio8Reference], ...] = ()
+
+    def tags(self) -> tuple[str, ...]:
+        return tuple(tag for tag, _ in self.entries)
+
+    def get(self, tag: str) -> Audio8Reference | None:
+        for entry_tag, reference in self.entries:
+            if entry_tag == tag:
+                return reference
+        return None
+
+    def with_entry(self, tag: str, reference: Audio8Reference) -> tuple["VoiceSet", str | None]:
+        if not isinstance(tag, str):
+            raise TypeError("Voice set tag must be a string")
+        tag = tag.strip()
+        if not tag:
+            raise ValueError("Voice set tag must not be empty")
+        if "[" in tag or "]" in tag:
+            raise ValueError("Voice set tag must not contain square brackets")
+        validate_reference(reference)
+        used = set(self.tags())
+        final_tag = tag
+        rename_note = None
+        if tag in used:
+            index = 1
+            while f"{tag}_{index}" in used:
+                index += 1
+            final_tag = f"{tag}_{index}"
+            rename_note = (f"Tag '{tag}' already exists in the voice set; "
+                           f"this entry was registered as '{final_tag}'")
+        return VoiceSet(self.entries + ((final_tag, reference),)), rename_note
+
+
+@dataclass(frozen=True)
+class ScriptSegment:
+    """One renderable span of script text with its resolved voice reference.
+
+    A reference of None means "use the TTS node's default reference input".
+    """
+
+    tag: str | None
+    reference: Audio8Reference | None
+    text: str
+
+
+@dataclass(frozen=True)
+class Audio8Script:
+    """Parsed script: ordered segments produced by one parse of the raw text."""
+
+    segments: tuple[ScriptSegment, ...]
+
+
 def validate_reference(reference: Audio8Reference) -> Audio8Reference:
     """Validate an Audio8 reference and return it for convenient chaining."""
 

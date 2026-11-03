@@ -1,4 +1,5 @@
 from pathlib import Path
+import logging
 
 import folder_paths
 
@@ -6,7 +7,12 @@ from .audio8_paths import (PACK_SUBFOLDER, available_models, local_model_dir,
                            pack_target_path, resolve_pack)
 from .audio8_pack import pack_model_directory
 from .audio8_runtime import load_model, encode_reference, generate
+from .audio8_script import parse_script
+from .audio8_types import VoiceSet
 from .voice_presets import save_voice, load_voice, voice_signature
+
+
+logger = logging.getLogger("audio8")
 
 
 class Audio8ModelLoader:
@@ -176,11 +182,95 @@ class Audio8LoadVoice:
         raise FileNotFoundError(f"[Audio8] Voice preset not found: {voice}")
 
 
+class Audio8VoiceSet:
+    """Empty root of a voice-set chain: free {tag -> reference} dictionary."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {}}
+
+    RETURN_TYPES = ("AUDIO8_VOICE_SET",)
+    RETURN_NAMES = ("voice_set",)
+    FUNCTION = "create"
+    CATEGORY = "audio/audio8"
+
+    def create(self):
+        return (VoiceSet(),)
+
+
+class Audio8VoiceSetAdd:
+    """Append one tag -> voice entry to a voice set.
+
+    Tags are free strings with no relationship to the voice on purpose; the
+    only rule is uniqueness: a duplicate gets _1, _2, ... in chain order.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "voice_set": ("AUDIO8_VOICE_SET",),
+            "voice": ("AUDIO8_REFERENCE",),
+            "tag": ("STRING", {"default": "", "tooltip":
+                "Tag string used in scripts as [tag]. Any text without square "
+                "brackets; unrelated to the voice file name on purpose. A "
+                "duplicate tag is registered with a _1, _2 ... suffix "
+                "(reported in the log output)."}),
+        }}
+
+    RETURN_TYPES = ("AUDIO8_VOICE_SET", "STRING")
+    RETURN_NAMES = ("voice_set", "log")
+    FUNCTION = "add"
+    CATEGORY = "audio/audio8"
+
+    def add(self, voice_set, voice, tag):
+        updated, note = voice_set.with_entry(tag, voice)
+        log = note or f"Tag '{tag.strip()}' added to the voice set."
+        if note:
+            logger.warning("[Audio8] %s", note)
+        return (updated, log)
+
+
+class Audio8Script:
+    """Parse tagged text once against a voice set into renderable segments.
+
+    Grammar: [tag] switches voice until the next tag, [[ and ]] escape
+    literal brackets, unknown brackets stay in the text and are reported.
+    The log output lists every warning; the parser never raises for tags.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "text": ("STRING", {"multiline": True, "default": "",
+                                "tooltip": "Script text. [tag] switches the "
+                                           "voice reference from the wired "
+                                           "voice set; text before the first "
+                                           "tag uses the TTS default "
+                                           "reference. [[ and ]] write "
+                                           "literal brackets."}),
+            "voice_set": ("AUDIO8_VOICE_SET",),
+        }}
+
+    RETURN_TYPES = ("AUDIO8_SCRIPT", "STRING")
+    RETURN_NAMES = ("script", "log")
+    FUNCTION = "parse"
+    CATEGORY = "audio/audio8"
+
+    def parse(self, text, voice_set):
+        script, warnings = parse_script(text, voice_set)
+        for warning in warnings:
+            logger.warning("[Audio8] Script: %s", warning)
+        summary = (f"segments: {len(script.segments)}; tags: "
+                   f"{', '.join(voice_set.tags()) or '(empty set)'}")
+        log = "\n".join([summary] + warnings)
+        return (script, log)
+
+
 class Audio8TTS:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
-            "model": ("AUDIO8_MODEL",), "text": ("STRING", {"multiline": True}),
+            "model": ("AUDIO8_MODEL",),
             "seed": ("INT", {"default": 42, "min": 0, "max": 0xffffffffffffffff}),
             "max_new_tokens": ("INT", {"default": 1024, "min": 1}),
             "temperature": ("FLOAT", {"default": 0.8, "min": 0.0}),
@@ -198,6 +288,13 @@ class Audio8TTS:
             "sentence_pause_ms": ("INT", {"default": 180, "min": 0}),
             "paragraph_pause_ms": ("INT", {"default": 350, "min": 0}),
         }, "optional": {
+            "text": ("STRING", {"multiline": True},),
+            "script": ("AUDIO8_SCRIPT", {
+                "tooltip": "Parsed tagged script (Audio8 Script node). When "
+                           "connected, text is ignored with a warning and "
+                           "each segment renders with its own voice "
+                           "reference; segments without a tag fall back to "
+                           "the reference input."}),
             "reference": ("AUDIO8_REFERENCE",),
             "fade_out_ms": ("FLOAT", {"default": 5.0, "min": 0.0, "step": 1.0,
                                       "tooltip": "Fade out the end of each chunk before its pause. Set 0 to disable."}),
@@ -217,8 +314,11 @@ class Audio8TTS:
     FUNCTION = "synthesize"
     CATEGORY = "audio/audio8"
 
-    def synthesize(self, model, text, **settings):
-        return (generate(model, text, **settings),)
+    def synthesize(self, model, text="", script=None, **settings):
+        if script is not None and text and text.strip():
+            logger.warning("[Audio8] TTS ignores the text input because a "
+                           "script is connected.")
+        return (generate(model, text, script=script, **settings),)
 
 
 NODE_CLASS_MAPPINGS = {
@@ -227,6 +327,9 @@ NODE_CLASS_MAPPINGS = {
     "Audio8EncodeReference": Audio8EncodeReference,
     "Audio8SaveVoice": Audio8SaveVoice,
     "Audio8LoadVoice": Audio8LoadVoice,
+    "Audio8VoiceSet": Audio8VoiceSet,
+    "Audio8VoiceSetAdd": Audio8VoiceSetAdd,
+    "Audio8Script": Audio8Script,
     "Audio8TTS": Audio8TTS,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -235,5 +338,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "Audio8EncodeReference": "Audio8 Encode Reference",
     "Audio8SaveVoice": "Audio8 Save Voice",
     "Audio8LoadVoice": "Audio8 Load Voice",
+    "Audio8VoiceSet": "Audio8 Voice Set",
+    "Audio8VoiceSetAdd": "Audio8 Voice Set Add",
+    "Audio8Script": "Audio8 Script",
     "Audio8TTS": "Audio8 TTS",
 }

@@ -15,6 +15,7 @@ from .audio8_acceleration import (GRAPH_SCOPES, cuda_graph_fast_decode,
                                    cuda_graph_frame_decode)
 from .audio8_comfy import comfy_audio8_ops
 from .audio8_chunking import split_text
+from .audio8_script import plan_script_chunks
 from .audio8_types import (Audio8ModelBundle, Audio8Reference, MODEL_ID,
                            CODEC_SAMPLE_RATE, NUM_CODEBOOKS, CODEBOOK_SIZE,
                            validate_reference)
@@ -199,16 +200,45 @@ def generate(bundle, text, reference=None, seed=42, max_new_tokens=1024,
              temperature=0.8, top_p=0.95, top_k=50, greedy=False, retry_max_new_tokens=2000,
              chunking="auto", target_chunk_chars=130, max_chunk_chars=150,
              sentence_pause_ms=180, paragraph_pause_ms=350, fade_out_ms=5.0, cuda_graphs=False,
-             comfy_ops=False, attention_backend="auto", cuda_graph_scope="fast"):
+             comfy_ops=False, attention_backend="auto", cuda_graph_scope="fast", script=None):
     if cuda_graph_scope not in GRAPH_SCOPES:
         raise ValueError(f"[Audio8] Unknown cuda_graph_scope: {cuda_graph_scope!r}")
-    if not text.strip():
+    planned = None
+    if script is not None:
+        planned = plan_script_chunks(script, chunking, target_chunk_chars,
+                                     max_chunk_chars, sentence_pause_ms,
+                                     paragraph_pause_ms)
+        if not planned:
+            raise ValueError("[Audio8] Script contains no renderable text")
+    elif not text.strip():
         raise ValueError("[Audio8] Text must not be empty")
     cuda_graphs = cuda_graphs and bundle.device.type == "cuda"
     generator = torch.Generator(device=bundle.device).manual_seed(seed)
     settings = dict(temperature=temperature, top_p=top_p, top_k=top_k,
                     do_sample=not greedy, generator=generator, return_dict_in_generate=True)
-    if chunking == "disabled" or len(text) <= max_chunk_chars or not text.strip():
+    if planned is not None:
+        parts = []
+        progress = comfy.utils.ProgressBar(len(planned))
+        for index, (chunk_text, chunk_reference, pause_after_ms) in enumerate(planned, 1):
+            comfy.model_management.throw_exception_if_processing_interrupted()
+            logger.info("[Audio8] Script chunk %d/%d", index, len(planned))
+            try:
+                part = _generate_utterance(bundle, chunk_text,
+                                          chunk_reference if chunk_reference is not None else reference,
+                                          max_new_tokens, retry_max_new_tokens, settings,
+                                          fade_out_ms, cuda_graphs, comfy_ops,
+                                          attention_backend, cuda_graph_scope)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"[Audio8] Generation failed for script chunk {index}/{len(planned)}: "
+                    f"{chunk_text[:80]!r}") from exc
+            parts.append(part)
+            if pause_after_ms > 0:
+                samples = round(bundle.sample_rate * pause_after_ms / 1000)
+                parts.append(part.new_zeros((1, 1, samples)))
+            progress.update(1)
+        waveform = torch.cat(parts, dim=-1)
+    elif chunking == "disabled" or len(text) <= max_chunk_chars or not text.strip():
         waveform = _generate_utterance(bundle, text, reference, max_new_tokens,
                                        retry_max_new_tokens, settings, fade_out_ms, cuda_graphs, comfy_ops,
                                        attention_backend, cuda_graph_scope)
