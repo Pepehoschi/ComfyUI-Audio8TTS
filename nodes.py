@@ -289,12 +289,6 @@ class Audio8TTS:
             "paragraph_pause_ms": ("INT", {"default": 350, "min": 0}),
         }, "optional": {
             "text": ("STRING", {"multiline": True},),
-            "script": ("AUDIO8_SCRIPT", {
-                "tooltip": "Parsed tagged script (Audio8 Script node). When "
-                           "connected, text is ignored with a warning and "
-                           "each segment renders with its own voice "
-                           "reference; segments without a tag fall back to "
-                           "the reference input."}),
             "reference": ("AUDIO8_REFERENCE",),
             "fade_out_ms": ("FLOAT", {"default": 5.0, "min": 0.0, "step": 1.0,
                                       "tooltip": "Fade out the end of each chunk before its pause. Set 0 to disable."}),
@@ -308,6 +302,13 @@ class Audio8TTS:
             "attention_backend": (["auto", "flash", "comfy_kitchen_int8"], {
                 "default": "auto",
                 "tooltip": "With comfy_ops enabled, choose optimized slow-decoder attention. Requires the selected backend to be installed; auto retains ComfyUI's default."}),
+            "script": ("AUDIO8_SCRIPT", {
+                "tooltip": "Parsed tagged script (Audio8 Script node). When "
+                           "connected, text is ignored with a warning and "
+                           "each segment renders with its own voice "
+                           "reference; segments without a tag fall back to "
+                           "the reference input. Listed last so saved "
+                           "workflows keep their input slot numbers."}),
         }}
 
     RETURN_TYPES = ("AUDIO",)
