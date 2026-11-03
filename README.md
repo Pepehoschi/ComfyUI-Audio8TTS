@@ -68,7 +68,9 @@ Load `examples/Audio8-Start.json` for a frontend canvas workflow (Model Loader, 
 - Audio8 Encode Reference: ComfyUI audio plus its transcript becomes reusable codec codes.
 - Audio8 Save Voice: atomically saves a reference under `models/audio8_voices/`.
 - Audio8 Load Voice: loads codes and transcript without the original audio file.
-- Audio8 TTS: produces native ComfyUI AUDIO, with an optional reference, automatic long-text chunking and per-chunk NO_EOS retry.
+- Audio8 Voice Set / Audio8 Voice Set Add: build a free `{tag → voice reference}` set in the graph; a later duplicate tag automatically gains a `_1`, `_2`, … suffix instead of failing.
+- Audio8 Script: multiline text plus the wired voice set; `[tag]` switches the reference until the next tag, `[[`/`]]` escape literal brackets, unknown tags stay verbatim with a warning. Outputs the parsed script and a `log` string.
+- Audio8 TTS: produces native ComfyUI AUDIO, with an optional reference, automatic long-text chunking and per-chunk NO_EOS retry; accepts the parsed `script` instead of plain `text` for per-segment voices.
 
 Connect the model loader to Encode Reference and TTS. Connect Load Audio to Encode Reference, then its reference output to TTS or Save Voice. For saved voices, connect Load Voice to TTS. Connect TTS to ComfyUI Save Audio.
 
