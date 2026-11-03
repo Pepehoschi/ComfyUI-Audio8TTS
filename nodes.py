@@ -56,6 +56,9 @@ class Audio8ModelLoader:
             return (dtype, ckpt_name, "unresolved")
 
     RETURN_TYPES = ("AUDIO8_MODEL",)
+    RETURN_NAMES = ("model",)
+    OUTPUT_TOOLTIPS = ("Loaded Audio8 model, ready for Audio8 TTS and "
+                       "Audio8 Encode Reference.",)
     FUNCTION = "load"
     CATEGORY = "audio/audio8"
 
@@ -101,6 +104,8 @@ class Audio8PackModel:
 
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("pack_name",)
+    OUTPUT_TOOLTIPS = ("Pack name relative to the diffusion_models folders, "
+                       "directly selectable in Audio8 Model Loader.",)
     FUNCTION = "pack"
     CATEGORY = "audio/audio8"
     OUTPUT_NODE = True
@@ -123,10 +128,25 @@ class Audio8PackModel:
 class Audio8EncodeReference:
     @classmethod
     def INPUT_TYPES(cls):
-        return {"required": {"model": ("AUDIO8_MODEL",), "audio": ("AUDIO",),
-                             "reference_text": ("STRING", {"multiline": True})}}
+        return {"required": {
+            "model": ("AUDIO8_MODEL", {"tooltip":
+                "Loaded Audio8 model; its codec turns the reference audio "
+                "into codes."}),
+            "audio": ("AUDIO", {"tooltip":
+                "Reference recording whose voice character is cloned. Short "
+                "and clean works best; any sample rate, it is resampled to "
+                "the codec rate."}),
+            "reference_text": ("STRING", {"multiline": True, "tooltip":
+                "Exact transcript of what is spoken in the reference audio. "
+                "It is stored with the codes and acts as the speaking "
+                "prompt."}),
+        }}
 
     RETURN_TYPES = ("AUDIO8_REFERENCE",)
+    RETURN_NAMES = ("reference",)
+    OUTPUT_TOOLTIPS = ("Reference preset (codec codes plus transcript); save "
+                       "it with Audio8 Save Voice or feed it straight into "
+                       "Audio8 TTS.",)
     FUNCTION = "encode"
     CATEGORY = "audio/audio8"
 
@@ -137,11 +157,17 @@ class Audio8EncodeReference:
 class Audio8SaveVoice:
     @classmethod
     def INPUT_TYPES(cls):
-        return {"required": {"reference": ("AUDIO8_REFERENCE",),
-                             "name": ("STRING", {"default": "voice"})}}
+        return {"required": {
+            "reference": ("AUDIO8_REFERENCE", {"tooltip":
+                "Reference preset from Audio8 Encode Reference."}),
+            "name": ("STRING", {"default": "voice", "tooltip":
+                "File name inside the audio8_voices folders (without "
+                ".safetensors); Audio8 Load Voice lists it."}),
+        }}
 
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("saved_path",)
+    OUTPUT_TOOLTIPS = ("Full path of the written preset file.",)
     FUNCTION = "save"
     CATEGORY = "audio/audio8"
     OUTPUT_NODE = True
@@ -167,9 +193,14 @@ class Audio8LoadVoice:
         for directory in folder_paths.get_folder_paths("audio8_voices"):
             if Path(directory).is_dir():
                 names.update(path.name for path in Path(directory).glob("*.safetensors"))
-        return {"required": {"voice": (sorted(names),)}}
+        return {"required": {"voice": (sorted(names), {"tooltip":
+            "Presets (*.safetensors) from the audio8_voices folders; a "
+            "replaced file is detected and reloads."})}}
 
     RETURN_TYPES = ("AUDIO8_REFERENCE",)
+    RETURN_NAMES = ("reference",)
+    OUTPUT_TOOLTIPS = ("Reference preset for Audio8 TTS or for a tag entry "
+                       "in a voice-set chain.",)
     FUNCTION = "load"
     CATEGORY = "audio/audio8"
 
@@ -191,6 +222,8 @@ class Audio8VoiceSet:
 
     RETURN_TYPES = ("AUDIO8_VOICE_SET",)
     RETURN_NAMES = ("voice_set",)
+    OUTPUT_TOOLTIPS = ("Empty voice set; register tags with Audio8 Voice "
+                       "Set Add.",)
     FUNCTION = "create"
     CATEGORY = "audio/audio8"
 
@@ -208,8 +241,11 @@ class Audio8VoiceSetAdd:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
-            "voice_set": ("AUDIO8_VOICE_SET",),
-            "voice": ("AUDIO8_REFERENCE",),
+            "voice_set": ("AUDIO8_VOICE_SET", {"tooltip":
+                "Chain start (Audio8 Voice Set) or the output of the "
+                "previous Audio8 Voice Set Add."}),
+            "voice": ("AUDIO8_REFERENCE", {"tooltip":
+                "Reference preset registered under the tag."}),
             "tag": ("STRING", {"default": "", "tooltip":
                 "Tag string used in scripts as [tag]. Any text without square "
                 "brackets; unrelated to the voice file name on purpose. A "
@@ -219,6 +255,10 @@ class Audio8VoiceSetAdd:
 
     RETURN_TYPES = ("AUDIO8_VOICE_SET", "STRING")
     RETURN_NAMES = ("voice_set", "log")
+    OUTPUT_TOOLTIPS = ("Updated chain including the new entry; feed into the "
+                       "next Add or into Audio8 Script.",
+                       "Registration note, e.g. a duplicate tag moved to "
+                       "tag_1.")
     FUNCTION = "add"
     CATEGORY = "audio/audio8"
 
@@ -248,11 +288,16 @@ class Audio8Script:
                                            "tag uses the TTS default "
                                            "reference. [[ and ]] write "
                                            "literal brackets."}),
-            "voice_set": ("AUDIO8_VOICE_SET",),
+            "voice_set": ("AUDIO8_VOICE_SET", {"tooltip":
+                "Voice-set chain that decides which [tags] are known. "
+                "Unknown brackets stay in the text and are reported."}),
         }}
 
     RETURN_TYPES = ("AUDIO8_SCRIPT", "STRING")
     RETURN_NAMES = ("script", "log")
+    OUTPUT_TOOLTIPS = ("Parsed segments for the script input of Audio8 TTS.",
+                       "Segment and tag summary plus every parse warning "
+                       "(unknown brackets, tags inside a sentence).")
     FUNCTION = "parse"
     CATEGORY = "audio/audio8"
 
@@ -270,26 +315,60 @@ class Audio8TTS:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
-            "model": ("AUDIO8_MODEL",),
-            "seed": ("INT", {"default": 42, "min": 0, "max": 0xffffffffffffffff}),
-            "max_new_tokens": ("INT", {"default": 1024, "min": 1}),
-            "temperature": ("FLOAT", {"default": 0.8, "min": 0.0}),
-            "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0}),
-            "top_k": ("INT", {"default": 50, "min": 0}),
-            "greedy": ("BOOLEAN", {"default": False}),
+            "model": ("AUDIO8_MODEL", {"tooltip":
+                "Loaded Audio8 model from Audio8 Model Loader."}),
+            "seed": ("INT", {"default": 42, "min": 0, "max": 0xffffffffffffffff,
+                             "tooltip": "One generator advances through the "
+                                        "whole run; a scripted render keeps "
+                                        "one seed across all segments."}),
+            "max_new_tokens": ("INT", {"default": 1024, "min": 1,
+                                       "tooltip": "Token budget for the "
+                                                  "first pass of each chunk."}),
+            "temperature": ("FLOAT", {"default": 0.8, "min": 0.0,
+                                      "tooltip": "Sampling temperature; "
+                                                 "ignored with greedy."}),
+            "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0,
+                                "tooltip": "Nucleus cutoff; ignored with "
+                                           "greedy."}),
+            "top_k": ("INT", {"default": 50, "min": 0,
+                              "tooltip": "Candidate codes per step; 0 "
+                                         "disables. Ignored with greedy."}),
+            "greedy": ("BOOLEAN", {"default": False,
+                                   "tooltip": "Always pick the most likely "
+                                              "code; overrides temperature, "
+                                              "top_p and top_k."}),
             "retry_max_new_tokens": ("INT", {
                 "default": 2000, "min": 0,
                 "tooltip": "Token budget for one retry when the first pass found no EOS. "
                            "Upstream caps every request at max_seq_len (2048) minus the "
                            "prompt length; the effective budget is logged when capped."}),
-            "chunking": (["auto", "disabled"],),
-            "target_chunk_chars": ("INT", {"default": 130, "min": 1}),
-            "max_chunk_chars": ("INT", {"default": 150, "min": 1}),
-            "sentence_pause_ms": ("INT", {"default": 180, "min": 0}),
-            "paragraph_pause_ms": ("INT", {"default": 350, "min": 0}),
+            "chunking": (["auto", "disabled"], {"tooltip":
+                "auto splits long text into sentence-shaped chunks; "
+                "disabled sends the whole text in one request."}),
+            "target_chunk_chars": ("INT", {"default": 130, "min": 1,
+                                           "tooltip": "Split points prefer "
+                                                      "sentence ends up to "
+                                                      "this length."}),
+            "max_chunk_chars": ("INT", {"default": 150, "min": 1,
+                                        "tooltip": "Hard cap per chunk; "
+                                                   "longer text is split "
+                                                   "regardless of sentence "
+                                                   "ends."}),
+            "sentence_pause_ms": ("INT", {"default": 180, "min": 0,
+                                          "tooltip": "Silence after a chunk "
+                                                     "ending on a sentence."}),
+            "paragraph_pause_ms": ("INT", {"default": 350, "min": 0,
+                                           "tooltip": "Longer silence at "
+                                                      "paragraph boundaries; "
+                                                      "scripted tag switches "
+                                                      "use it too."}),
         }, "optional": {
-            "text": ("STRING", {"multiline": True},),
-            "reference": ("AUDIO8_REFERENCE",),
+            "text": ("STRING", {"multiline": True, "tooltip":
+                "Plain text to speak. Ignored with a warning when the "
+                "script input is connected."}),
+            "reference": ("AUDIO8_REFERENCE", {"tooltip":
+                "Default voice reference (Audio8 Load Voice): renders text "
+                "before the first tag and every untagged segment."}),
             "fade_out_ms": ("FLOAT", {"default": 110.0, "min": 0.0, "step": 1.0,
                                       "tooltip": "Fade out the end of each chunk before its pause. Set 0 to disable."}),
             "cuda_graphs": ("BOOLEAN", {"default": True,
@@ -312,6 +391,9 @@ class Audio8TTS:
         }}
 
     RETURN_TYPES = ("AUDIO",)
+    RETURN_NAMES = ("audio",)
+    OUTPUT_TOOLTIPS = ("Synthesized waveform at 44100 Hz; connect to Save "
+                       "Audio or another AUDIO consumer.",)
     FUNCTION = "synthesize"
     CATEGORY = "audio/audio8"
 
