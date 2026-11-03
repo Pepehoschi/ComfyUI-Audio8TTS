@@ -61,8 +61,26 @@ def _resolve(root: Path, relative: str) -> Path:
     return candidate
 
 
-def local_model_path(model_name: str = "auto") -> Path:
-    """Resolve a model directory by name; auto picks the default or only model."""
+def local_model_path(model_name: str = "auto", model_path: str = "") -> Path:
+    """Resolve a model directory; explicit paths win over registered names."""
+
+    if model_path and model_path.strip():
+        candidate = Path(model_path.strip().strip('"'))
+        if not candidate.is_absolute():
+            raise FileNotFoundError(
+                "[Audio8] model_path must be an absolute directory path, e.g. "
+                "D:\\SharedModels\\Audio8\\Audio8-TTS-Realistic-0.6b (the folder "
+                "containing config.json and codec.pth). For registered audio8_tts "
+                "folders use model_name instead.")
+        if not candidate.is_dir():
+            raise FileNotFoundError(f"[Audio8] Model directory not found: {candidate}")
+        missing = [name for name in ("config.json", "codec.pth")
+                   if not (candidate / name).is_file()]
+        if missing:
+            raise FileNotFoundError(
+                f"[Audio8] {candidate} is not a complete Audio8 model directory; "
+                f"missing: {', '.join(missing)}")
+        return candidate
 
     if model_name and model_name != "auto":
         for root in _roots():

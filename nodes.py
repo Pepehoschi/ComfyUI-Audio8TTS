@@ -32,16 +32,24 @@ class Audio8ModelLoader:
                            "audio8_tts folders (models/audio8_tts plus any "
                            "extra_model_paths.yaml entry); a directory qualifies "
                            "by containing config.json. 'auto' uses the default "
-                           "Audio8-TTS-Realistic-0.6b, or the only model found."}),
+                           "Audio8-TTS-Realistic-0.6b, or the only model found. "
+                           "Ignored when model_path is set."}),
+            "model_path": ("STRING", {
+                "default": "",
+                "tooltip": "Absolute path to an Audio8 model directory (the "
+                           "folder containing config.json, codec.pth and the "
+                           "weights, e.g. a Stability-Matrix shared-models "
+                           "folder). Takes precedence over model_name. Audio8 "
+                           "loads a directory, not a single file."}),
         }}
 
     @classmethod
-    def IS_CHANGED(cls, dtype="auto", model_name="auto"):
+    def IS_CHANGED(cls, dtype="auto", model_name="auto", model_path=""):
         # The model path is fixed per installation, so a replaced checkpoint would
         # otherwise keep serving from the node cache forever. The directory holds a
         # handful of files; stat-ing them per queue check is cheap.
         try:
-            target = local_model_path(model_name)
+            target = local_model_path(model_name, model_path)
             files = [p for p in target.rglob("*") if p.is_file()]
         except Exception:
             # Nothing resolvable (or not yet placed): fall back to the root list,
@@ -54,8 +62,8 @@ class Audio8ModelLoader:
     FUNCTION = "load"
     CATEGORY = "audio/audio8"
 
-    def load(self, dtype="auto", model_name="auto"):
-        return (load_model(dtype, model_name),)
+    def load(self, dtype="auto", model_name="auto", model_path=""):
+        return (load_model(dtype, model_name, model_path),)
 
 
 class Audio8EncodeReference:

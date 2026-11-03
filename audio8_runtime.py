@@ -58,9 +58,9 @@ def check_transformers_version():
         )
 
 
-def load_model(dtype="auto", model_name="auto"):
+def load_model(dtype="auto", model_name="auto", model_path=""):
     check_transformers_version()
-    model_path = local_model_path(model_name)
+    model_path = local_model_path(model_name, model_path)
     device = comfy.model_management.get_torch_device()
     dtypes = {"auto": torch.bfloat16, "bfloat16": torch.bfloat16,
               "float16": torch.float16, "float32": torch.float32}
