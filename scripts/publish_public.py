@@ -32,6 +32,7 @@ EXCLUDE = [
     "TODO.MD",
     "IDEA.md",
     "NATIVE_OPS_PLAN.md",
+    "AGENTS.md",
     "tests",
     "benchmarks",
     "api_examples",
