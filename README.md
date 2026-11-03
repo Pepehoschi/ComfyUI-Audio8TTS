@@ -144,8 +144,6 @@ $env:AUDIO8_TEST_TRANSCRIPT = 'Exact words spoken in the reference recording.'
 
 That test uses the existing SoundFile installation to read the reference, checks the preset roundtrip and compares generated codes for direct versus cached reference conditioning with greedy decoding. It performs no model downloads.
 
-See [PROGRESS.md](PROGRESS.md) for the current state and [ImplementationPlan.md](ImplementationPlan.md) for remaining work.
-
 ## Limitations
 
 - ComfyUI cancellation takes effect between text chunks; a generation that already
