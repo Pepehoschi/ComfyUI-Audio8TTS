@@ -29,8 +29,12 @@ const STYLE = `
 /* Browsers repaint selected text with the selection's foreground colour
    (white), which overrides our transparent text and shows a ghost copy
    of the textarea glyphs under the mirror. Keep selection text
-   transparent: the highlight band stays, the white glyphs do not. */
-.audio8-tag-src-hidden textarea.comfy-multiline-input::selection { color:transparent; }
+   transparent and name the band colour explicitly: styling ::selection
+   at all makes Chrome drop its default highlight background, so the
+   band must be restated (system accent colour). */
+.audio8-tag-src-hidden textarea.comfy-multiline-input::selection {
+  color:transparent; background:Highlight;
+}
 `;
 
 function styleOnce() {
