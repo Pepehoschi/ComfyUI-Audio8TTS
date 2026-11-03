@@ -16,47 +16,68 @@ class _FastDecoderGraph:
     def __init__(self, model):
         self.model = model
         self.captured = None
+        self.failed = False
+        self.fallback = None
 
-    def step(self, hidden, position):
-        if self.captured is None:
-            model = self.model
-            static_input = hidden.clone()
-            cache_position = torch.zeros(1, device=hidden.device, dtype=torch.long)
-            key_mask = torch.ones((hidden.shape[0], model.config.num_codebooks),
-                                  device=hidden.device, dtype=torch.bool)
+    def _build(self, hidden):
+        model = self.model
+        static_input = hidden.clone()
+        cache_position = torch.zeros(1, device=hidden.device, dtype=torch.long)
+        key_mask = torch.ones((hidden.shape[0], model.config.num_codebooks),
+                              device=hidden.device, dtype=torch.bool)
 
-            def compute(value):
-                rope = model.fast_freqs_cis[cache_position]
-                mask = model._causal_mask(key_mask, cache_position, model.config.num_codebooks)
-                for layer in model.fast_layers:
-                    value = layer(value, rope, mask, cache_position)
-                return model.fast_output(model.fast_norm(value))[:, -1]
+        def compute(value):
+            rope = model.fast_freqs_cis[cache_position]
+            mask = model._causal_mask(key_mask, cache_position, model.config.num_codebooks)
+            for layer in model.fast_layers:
+                value = layer(value, rope, mask, cache_position)
+            return model.fast_output(model.fast_norm(value))[:, -1]
 
-            stream = torch.cuda.Stream(device=hidden.device)
-            stream.wait_stream(torch.cuda.current_stream(hidden.device))
-            with torch.cuda.stream(stream):
-                compute(static_input)
-                # The kept warmup result becomes the output buffer itself, so it is a
-                # plain allocation outside the graph pool: replays write through it and
-                # nothing in the pool ever needs an uncaptured free. Handing a pool
-                # tensor to the caller instead costs one "uncaptured free of a captured
-                # allocation" warning per output tensor on every teardown.
-                output = compute(static_input)
-            torch.cuda.current_stream(hidden.device).wait_stream(stream)
+        stream = torch.cuda.Stream(device=hidden.device)
+        stream.wait_stream(torch.cuda.current_stream(hidden.device))
+        with torch.cuda.stream(stream):
+            compute(static_input)
+            # The kept warmup result becomes the output buffer itself, so it is a
+            # plain allocation outside the graph pool: replays write through it and
+            # nothing in the pool ever needs an uncaptured free. Handing a pool
+            # tensor to the caller instead costs one "uncaptured free of a captured
+            # allocation" warning per output tensor on every teardown.
+            output = compute(static_input)
+        torch.cuda.current_stream(hidden.device).wait_stream(stream)
 
-            def write_outputs():
-                output.copy_(compute(static_input))
+        def write_outputs():
+            output.copy_(compute(static_input))
 
-            graph = torch.cuda.CUDAGraph()
+        # An exception escaping the capture region used to poison the CUDA context
+        # and abort the whole server process (observed 2026-11-02). The region
+        # itself stays free of Python-level interrupts; failures here degrade to the
+        # eager path for the rest of the generate call instead of losing the job.
+        graph = torch.cuda.CUDAGraph()
+        try:
             with torch.cuda.graph(graph):
                 write_outputs()
-            # Captured metadata must stay alive for every replay in this generate call.
-            self.captured = (graph, static_input, output, cache_position, key_mask)
-        graph, static_input, output, cache_position, _ = self.captured
+        except Exception:
+            logger.exception("[Audio8] Fast-decoder graph capture failed; running "
+                             "eager for the rest of this generation")
+            self.failed = True
+            self.fallback = (static_input, cache_position, compute)
+            return
+        # Captured metadata must stay alive for every replay in this generate call.
+        self.captured = (graph, static_input, output, cache_position, key_mask)
+
+    def step(self, hidden, position):
+        if self.captured is None and not self.failed:
+            self._build(hidden)
+        if self.captured is not None:
+            graph, static_input, output, cache_position, _ = self.captured
+            static_input.copy_(hidden)
+            cache_position.fill_(position)
+            graph.replay()
+            return output
+        static_input, cache_position, compute = self.fallback
         static_input.copy_(hidden)
         cache_position.fill_(position)
-        graph.replay()
-        return output
+        return compute(static_input)
 
 
 class _SlowDecodeGraph:
@@ -74,6 +95,7 @@ class _SlowDecodeGraph:
         self.original = original
         self.max_new_tokens = max_new_tokens
         self.captured = None
+        self.failed = False
 
     def _capture(self, input_ids, cache_position, position_ids, attention_mask):
         model = self.model
@@ -107,8 +129,16 @@ class _SlowDecodeGraph:
                 buffer.copy_(value)
 
         graph = torch.cuda.CUDAGraph()
-        with torch.cuda.graph(graph):
-            write_outputs()
+        # See _FastDecoderGraph._build: a failed capture must degrade to eager,
+        # never unwind through a half-closed capture region.
+        try:
+            with torch.cuda.graph(graph):
+                write_outputs()
+        except Exception:
+            logger.exception("[Audio8] Slow-decode graph capture failed; running "
+                             "eager for the rest of this generation")
+            self.failed = True
+            return None
         # Statics and outputs must stay allocated for every replay in this generate call.
         self.captured = (graph, statics, outputs)
         return self.captured
@@ -117,11 +147,13 @@ class _SlowDecodeGraph:
         if input_ids.shape[-1] != 1:
             return self.original(input_ids, cache_position, position_ids, attention_mask)
         captured = self.captured
-        if captured is None:
+        if captured is None and not self.failed:
             if not bool(attention_mask.all()):
                 logger.info("[Audio8] Frame graph kept eager: padded batch")
                 return self.original(input_ids, cache_position, position_ids, attention_mask)
             captured = self._capture(input_ids, cache_position, position_ids, attention_mask)
+        if captured is None:
+            return self.original(input_ids, cache_position, position_ids, attention_mask)
         graph, (ids, cache, positions, _), outputs = captured
         ids.copy_(input_ids)
         cache.copy_(cache_position)
@@ -145,6 +177,7 @@ class _CodebookChainGraph:
         self.captured = None
         self.constants = None
         self.notified_eager = False
+        self.failed = False
 
     def _fast_step(self, hidden, cache_position, key_mask):
         model = self.model
@@ -221,8 +254,17 @@ class _CodebookChainGraph:
         if do_sample and generator is not None:
             # The chain samples inside the graph, so its generator has to be part of it.
             graph.register_generator_state(generator)
-        with torch.cuda.graph(graph):
-            write_outputs()
+        # See _FastDecoderGraph._build: a failed capture must degrade to eager,
+        # never unwind through a half-closed capture region.
+        try:
+            with torch.cuda.graph(graph):
+                write_outputs()
+        except Exception:
+            logger.exception("[Audio8] Codebook chain graph capture failed; running "
+                             "eager for the rest of this generation")
+            self.failed = True
+            self.constants = None
+            return None
         self.captured = (graph, statics, outputs)
         return self.captured
 
@@ -236,9 +278,12 @@ class _CodebookChainGraph:
             return self.original(slow_hidden, semantic, processors, top_k, top_p, temperature,
                                  do_sample, generator)
         captured = self.captured
-        if captured is None:
+        if captured is None and not self.failed:
             captured = self._capture(slow_hidden, semantic, top_k, top_p, temperature,
                                      do_sample, generator)
+        if captured is None:
+            return self.original(slow_hidden, semantic, processors, top_k, top_p, temperature,
+                                 do_sample, generator)
         graph, (hidden, codes, positions, key_mask), outputs = captured
         hidden.copy_(slow_hidden)
         codes.copy_(semantic)
