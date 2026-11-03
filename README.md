@@ -61,7 +61,7 @@ sample-identical to on-the-fly `dtype=int8_convrot` (maxdiff 0.0).
 
 ## Nodes
 
-Load `example_workflows/Audio8-Start.json` for a frontend canvas workflow (Model Loader, Load Voice, TTS, Save Audio). On this machine it selects `Audio8-Referenz.safetensors`, encoded from the supplied reference recording. Other installations must create their own voice preset first. `example_workflows/Audio8-Voice-Tags.json` shows per-segment emotional voices with a voice set and a tagged script. Both files appear in ComfyUI's Workflow Templates browser under `ComfyUI-Audio8TTS`.
+Load `example_workflows/Audio8_Start.json` for a frontend canvas workflow (Model Loader, Load Voice, TTS, Save Audio). On this machine it selects `Audio8-Referenz.safetensors`, encoded from the supplied reference recording. Other installations must create their own voice preset first. `example_workflows/Audio8-Voice-Tags.json` shows per-segment emotional voices with a voice set and a tagged script. Both files appear in ComfyUI's Workflow Templates browser under `ComfyUI-Audio8TTS`; the same-name `.jpg` next to each JSON is the card preview (the frontend always requests `.jpg`).
 
 - Audio8 Model Loader: shared model and processor; `ckpt_name` picker over the `diffusion_models` folders; CPU uses FP32.
 - Audio8 Pack Model: folds a model directory into one `.safetensors` pack under `audio8/` in the `diffusion_models` folder that already holds one; `quantize="int8_convrot"` writes a separate `…-int8convrot.safetensors`.
