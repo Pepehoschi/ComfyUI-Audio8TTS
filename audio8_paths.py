@@ -4,6 +4,7 @@ import folder_paths
 
 
 MODEL_DIRECTORY = "Audio8-TTS-Realistic-0.6b"
+ARCH_MIRROR_SUFFIX = "__with_arch"
 
 
 def register_folders():
@@ -35,11 +36,15 @@ def available_models(max_depth: int = 2) -> list[str]:
         frontier = [(root, 0)]
         while frontier:
             directory, depth = frontier.pop()
+            if directory.name.endswith(ARCH_MIRROR_SUFFIX):
+                continue
             try:
                 children = sorted(p for p in directory.iterdir() if p.is_dir())
             except OSError:
                 continue
             for child in children:
+                if child.name.endswith(ARCH_MIRROR_SUFFIX):
+                    continue
                 if _candidate(child):
                     found.setdefault(str(child.relative_to(root)).replace("\\", "/"), child)
                 elif depth + 1 < max_depth:

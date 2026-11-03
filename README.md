@@ -18,7 +18,11 @@ The loader looks in every folder registered under the `audio8_tts` template, so 
 
 Audio8 loads a model *directory*, never a single file. For models outside every registered root (for example a Stability-Matrix shared-models folder), set the optional `model_path` to the absolute path of the model directory; it takes precedence over `model_name`. The path must be absolute and the directory must contain `config.json` and `codec.pth`.
 
-The loader uses local files only. Audio8's supplied Python code is loaded with `trust_remote_code=True`; use model files from a trusted source.
+Model directories may omit the four Arktts architecture `.py` files. When they are absent, the node creates a mirror directory next to the model (`<model>__with_arch`, entries are hard links to the original files, plus verbatim copies of its bundled Apache-2.0 architecture from `audio8_arch/`, sha256 recorded in `audio8_arch/__init__.py`, attribution in `NOTICE.upstream`) and loads through it via the normal dynamic-module path. The mirror is a fingerprint-tracked cache; delete it any time and it rebuilds. The architecture code executed is then the node's audited copy, not files from the model folder. Do not register `audio8_arch` classes with the transformers Auto* factories: transformers 5.x then silently keeps constructor-initialized weights instead of loading the checkpoint (verified on 5.9.0).
+
+The loader uses local files only. Architecture code executed during loading is
+either the model directory's own files or the node's audited bundled copy;
+in both cases use model weight files from a trusted source.
 
 ## Nodes
 

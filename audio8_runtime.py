@@ -2,6 +2,7 @@ import logging
 from contextlib import ExitStack
 from importlib import import_module
 from importlib.metadata import version
+from pathlib import Path
 
 import torch
 from packaging.version import Version
@@ -11,7 +12,7 @@ import comfy.model_management
 import comfy.audio
 import comfy.utils
 
-from .audio8_paths import local_model_path
+from .audio8_paths import ARCH_MIRROR_SUFFIX, local_model_path
 from .audio8_quantization import INT8_CONVROT, quantize_model_int8_convrot
 from .audio8_acceleration import (GRAPH_SCOPES, cuda_graph_fast_decode,
                                    cuda_graph_frame_decode)
@@ -58,6 +59,73 @@ def check_transformers_version():
         )
 
 
+# Architecture files the model repos ship; if they are absent, the node builds
+# a mirror of the model directory (hard links) containing verbatim copies of
+# its bundled Apache-2.0 copy (audio8_arch) and loads through that mirror via
+# the proven dynamic-module path.
+ARCH_CODE_FILES = ("configuration_arktts.py", "modeling_arktts.py",
+                   "modeling_arktts_codec.py", "processing_arktts.py")
+
+
+def build_arch_mirror(model_path):
+    """Mirror a model directory and add the node's bundled architecture files.
+
+    Model directories without the four Arktts architecture .py files are loaded
+    through a sibling mirror directory (<name>__with_arch) whose entries are
+    hard links to the originals (copies across volumes), plus verbatim copies
+    of the bundled Apache-2.0 architecture (audio8_arch/). transformers then
+    resolves them via its proven dynamic-module path; no Auto* registration is
+    used because transformers 5.x silently leaves registered custom classes
+    initialized with constructor values instead of checkpoint weights.
+    The mirror doubles as a cache and is rebuilt when model files change.
+    """
+
+    import hashlib
+    import os
+    import shutil
+
+    model_path = Path(model_path)
+    mirror = model_path.parent / (model_path.name + ARCH_MIRROR_SUFFIX)
+
+    fingerprint_src = hashlib.sha256()
+    for entry in sorted(model_path.iterdir(), key=lambda p: p.name):
+        if entry.is_file():
+            stat = entry.stat()
+            fingerprint_src.update(f"{entry.name}:{stat.st_size}:{stat.st_mtime_ns}\n".encode())
+    fingerprint = fingerprint_src.hexdigest()
+
+    stamp = mirror / ".audio8_mirror_fingerprint"
+    if mirror.is_dir() and stamp.is_file() and stamp.read_text(encoding="utf-8") == fingerprint:
+        return mirror
+
+    from . import audio8_arch
+    arch_sources = [Path(audio8_arch.__file__).parent / name
+                    for name in ("configuration_arktts.py", "modeling_arktts.py",
+                                 "modeling_arktts_codec.py", "processing_arktts.py")]
+    for source in arch_sources:
+        if not source.is_file():
+            raise FileNotFoundError(f"[Audio8] bundled architecture file missing: {source}")
+
+    if mirror.is_dir():
+        shutil.rmtree(mirror)
+    mirror.mkdir()
+    try:
+        for entry in sorted(model_path.iterdir(), key=lambda p: p.name):
+            if entry.is_file():
+                target = mirror / entry.name
+                try:
+                    os.link(entry, target)
+                except OSError:
+                    shutil.copy2(entry, target)
+        for source in arch_sources:
+            shutil.copy2(source, mirror / source.name)
+        stamp.write_text(fingerprint, encoding="utf-8")
+    except Exception:
+        shutil.rmtree(mirror, ignore_errors=True)
+        raise
+    return mirror
+
+
 def load_model(dtype="auto", model_name="auto", model_path=""):
     check_transformers_version()
     model_path = local_model_path(model_name, model_path)
@@ -67,6 +135,13 @@ def load_model(dtype="auto", model_name="auto", model_path=""):
     if dtype not in dtypes and dtype != INT8_CONVROT:
         raise ValueError(f"[Audio8] Unknown dtype: {dtype}")
     compute_dtype = torch.float32 if device.type == "cpu" else dtypes.get(dtype, torch.bfloat16)
+    if not all((model_path / name).is_file() for name in ARCH_CODE_FILES):
+        mirror = build_arch_mirror(model_path)
+        logger.info("[Audio8] %s ships no architecture files; loading through the "
+                    "mirror %s with the node's bundled Apache-2.0 architecture "
+                    "(hard links to the original weights; audit copies in audio8_arch/)",
+                    model_path, mirror)
+        model_path = mirror
     logger.info("[Audio8] Loading %s from %s as %s on %s", MODEL_ID, model_path, compute_dtype, device)
     processor = AutoProcessor.from_pretrained(
         str(model_path), trust_remote_code=True, local_files_only=True,
