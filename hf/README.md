@@ -71,7 +71,15 @@ Local measurements on a ComfyUI cu128 instance (256 frames, greedy sampling,
 
 - Base model and architecture: [Edge0/Audio8-TTS-Realistic-0.6b](https://huggingface.co/Edge0/Audio8-TTS-Realistic-0.6b),
   Apache-2.0. The upstream `LICENSE` and `NOTICE` files are included in this
-  repository unchanged.
+  repository unchanged. These packs were built from that repository (recorded
+  in each pack's `audio8_model_id` metadata). Note: on 2026-11-02 Edge0 also
+  published the same release under the new name
+  [Edge0/Audio8-TTS-Realistic-Air](https://huggingface.co/Edge0/Audio8-TTS-Realistic-Air);
+  both repositories carry byte-identical `model.safetensors` and `codec.pth`
+  LFS objects, so either upstream matches these packs. The predecessor
+  [Edge0/Audio8-TTS-Preview-0.6b](https://huggingface.co/Edge0/Audio8-TTS-Preview-0.6b)
+  shares only the codec, not the language model weights, and is not the
+  source of these packs.
 - ComfyUI node code, packing tooling and tests:
   [Pepehoschi/ComfyUI-Audio8TTS](https://github.com/Pepehoschi/ComfyUI-Audio8TTS).
 - These packs are therefore distributed under Apache-2.0 as well.
