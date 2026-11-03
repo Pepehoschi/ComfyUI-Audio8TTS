@@ -6,7 +6,7 @@ Work in progress: native nodes for `Edge0/Audio8-TTS-Realistic-0.6b`.
 
 The project targets the existing ComfyUI cu128 installation. Do not separately install or replace Torch/Torchaudio.
 
-`requirements.txt` deliberately lists only `transformers>=4.57.0,<6` and `safetensors>=0.4`. Torch, Torchaudio and NumPy stay out on purpose: ComfyUI owns the PyTorch/CUDA build of its installation (cu128 here), and a pip-resolved `torch` entry would replace that build with a generic CUDA wheel and break the install. This boundary also applies to any future `pyproject.toml` for registry publishing - keep dependencies dynamic from `requirements.txt` and never add a torch-family entry. A test in `tests/test_comfy_contract.py` fails if a dependency file ever gains one.
+`requirements.txt` deliberately lists only `transformers>=4.57.0,<6` and `safetensors>=0.4`. Torch, Torchaudio and NumPy stay out on purpose: ComfyUI owns the PyTorch/CUDA build of its installation (cu128 here), and a pip-resolved `torch` entry would replace that build with a generic CUDA wheel and break the install. That boundary also applies to any future `pyproject.toml` for registry publishing - keep dependencies dynamic from `requirements.txt` and never add a torch-family entry.
 
 The integration supports Transformers `>=4.57.0,<6`. The complete local model, processor and codec have been tested with Transformers 5.9.0 and Torch 2.8.0+cu128 on an RTX 4090. No packages were changed. Model files were copied from the existing HuggingFace cache.
 
@@ -82,8 +82,6 @@ The corrected CUDA/BF16 path passes repeated-encoding, preset-roundtrip and Dire
 
 Long-text defaults are 130 target / 150 maximum characters, 180 ms between chunks and 350 ms at paragraph boundaries. One generator advances through the whole run, including retries. Reference codes are reused across chunks. Short text keeps the direct path; `chunking=disabled` sends the whole text to Audio8. Each decoded chunk receives a 110 ms fade-out before its pause; `fade_out_ms=0` disables it. Audio length is preserved. No trailing pause or automatic crossfade is added.
 
-The API prompt graphs live in `api_examples/` (`text_to_speech.api.json` synthesizes text, `save_voice.api.json` encodes and saves a reference, `saved_voice_tts.api.json` loads a saved voice); they are POST bodies for the `/prompt` API, not canvas files, so they stay out of `example_workflows/` and the template browser. Replace the example audio filename and transcript with matching local data. A saved-voice graph has completed on the local ComfyUI server and saved FLAC through Save Audio. A second request reused the cached loader and voice nodes. An actual server restart remains unverified.
-
 ## Performance
 
 The optional `comfy_ops` TTS input routes Audio8's inference layers through shared ComfyUI Linear, Embedding and RMSNorm operations, shared RoPE, and ComfyUI's selected attention implementation. The adapter preserves causal masking and grouped-query heads, shares checkpoint parameters, and uses a temporary ModelPatcher. The original processor, codec and generation rules remain in use. This does not convert or quantize the checkpoint and does not add full ComfyUI model offloading.
@@ -105,12 +103,6 @@ Five interleaved runs on the RTX 4090, 32 fixed frames and graph setup included:
 
 For speed without changing the sound, keep `comfy_ops=False` and use `cuda_graphs=True` with `cuda_graph_scope="frame"`: measured about four times faster and bit-identical audio. The attention backends add little on top and change the result: `flash` and `comfy_kitchen_int8` alter the sampled trajectory, and Kitchen INT8 quantises query, key and value. `cuda_graph_scope="frame"` is deliberately not combined with those two backends, the node logs a warning and falls back to `"fast"`. Model/codec loading and audio saving are outside these generation timings.
 
-`benchmarks/native_ops.py --output <directory>` compares prefill results and four variants (original/native, with/without CUDA Graphs), writes timings to JSON and produces comparison WAV files. It loads only local model and voice files.
-
-`benchmarks/compare_attention.py --profile --output <directory>` performs the interleaved attention comparison and records CUDA kernel evidence. `benchmarks/attention_backends.py` measures the registered implementations at representative Audio8 attention shapes.
-
-`benchmarks/audio_regression.py --record` followed by `--check` is the listening test you can run unattended. It sends one fixed text through four attention levels and three graph scopes to the running server and fails on two things: output whose peak, RMS or high frequency energy leaves the clean band, and any backend whose audio changes between graph scopes. A recorded reference additionally pins the waveform hash for strict same-machine comparison. It exists because one configuration degraded into audible noise while still reporting success and the expected frame count — only the waveform revealed it.
-
 The `cuda_graphs` input on Audio8 TTS is on by default and replays its decoder with CUDA Graphs; it is ignored on CPU. `cuda_graph_scope` selects the extent: `frame` (default) replays the whole frame, so one frame becomes two graph replays, `fast` replays only the fast decoder. The patch uses ComfyUI's ModelPatcher, preserves sampling, and releases graph tensors after each generation attempt; retries and chunks receive fresh graphs. It requires no Torch update or additional dependencies. Capture has an upfront cost, so very short outputs can benefit less.
 
 On the local RTX 4090 / Torch 2.8.0+cu128 / BF16 setup, a 75-frame utterance took a median 5.00 seconds with the standard path and 2.95 seconds with CUDA Graphs (two runs each, model already loaded, graph capture included). Generated codes were exactly equal. These are generation timings; initial model/codec loading and audio saving are separate.
@@ -118,31 +110,6 @@ On the local RTX 4090 / Torch 2.8.0+cu128 / BF16 setup, a 75-frame utterance too
 Measured again on the same setup with 96 tokens and greedy decoding, so all three variants are directly comparable: 17.21 s without graphs, 8.28 s with `cuda_graph_scope=fast`, 2.82 s with `frame`. Generated codes stayed exactly equal to the ungraphed path. With the node default sampling the same comparison was 8.64 s without graphs against 1.99 s with `frame`. Sampling draws its random numbers inside the graph, so one seed yields other codes than the ungraphed path while a different seed still changes the output. `frame` reserves more graph memory per generation attempt.
 
 Verified end to end through the running server, saved audio measured instead of codes (256 token budget, same text and seed, model and voice cached): 13.7 tokens/s without graphs, 53.9 with `cuda_graph_scope="frame"`, 28.0 with `comfy_ops=True attention_backend=flash` and `"fast"`. The three configurations without a maskless attention backend produced **bit-identical waveforms**, repeats included. High frequency energy of every clean sample sat between 0.22 and 0.28, so a listener comparison is meaningful; `frame` reserves more graph memory per generation attempt.
-
-`benchmarks/profile_generation.py` records a reproducible local benchmark and optional CPU/CUDA operator profile. It defaults to the local `Audio8-Referenz.safetensors` voice and never downloads weights:
-
-```powershell
-& 'D:\AI\ComfyUI_windows_portable\python_embeded\python.exe' benchmarks/profile_generation.py --tokens 256 --profile-tokens 0 --skip-kernel-experiments --output 'D:\AI\ComfyUI_windows_portable\ComfyUI\output\audio8_performance'
-```
-
-## Tests
-
-From this project directory, run with ComfyUI's Python:
-
-```powershell
-& 'D:\AI\ComfyUI_windows_portable\python_embeded\python.exe' -m unittest discover -s tests
-```
-
-The real model test is skipped by default. Once compatible Transformers, complete local weights and a reference recording are available, opt in with:
-
-```powershell
-$env:AUDIO8_RUN_INTEGRATION = '1'
-$env:AUDIO8_TEST_REFERENCE = 'D:\path\reference.wav'
-$env:AUDIO8_TEST_TRANSCRIPT = 'Exact words spoken in the reference recording.'
-& 'D:\AI\ComfyUI_windows_portable\python_embeded\python.exe' -m unittest discover -s tests -p test_model_integration.py
-```
-
-That test uses the existing SoundFile installation to read the reference, checks the preset roundtrip and compares generated codes for direct versus cached reference conditioning with greedy decoding. It performs no model downloads.
 
 ## Limitations
 

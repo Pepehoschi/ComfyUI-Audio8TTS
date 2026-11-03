@@ -9,3 +9,6 @@ __pycache__/
 /TODO.MD
 /IDEA.md
 /NATIVE_OPS_PLAN.md
+/tests/
+/benchmarks/
+/api_examples/
