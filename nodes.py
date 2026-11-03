@@ -2,7 +2,8 @@ from pathlib import Path
 
 import folder_paths
 
-from .audio8_paths import available_models, local_model_path
+from .audio8_paths import available_models, available_packs, local_model_path
+from .audio8_pack import pack_model_directory
 from .audio8_runtime import load_model, encode_reference, generate
 from .voice_presets import save_voice, load_voice, voice_signature
 
@@ -11,11 +12,11 @@ class Audio8ModelLoader:
     @classmethod
     def INPUT_TYPES(cls):
         try:
-            models = available_models()
+            models = available_models() + available_packs()
         except Exception:
             models = []
         return {"required": {
-            "dtype": (["auto", "bfloat16", "float16", "float32", "int8_convrot"], {
+            "dtype": ([ "auto", "bfloat16", "float16", "float32", "int8_convrot"], {
                 "tooltip": "int8_convrot loads bfloat16 activations and stores the language "
                            "model's nn.Linear weights as int8 with per-group rotation "
                            "(comfy-kitchen TensorWiseINT8Layout, group 64); in_features not "
@@ -28,19 +29,21 @@ class Audio8ModelLoader:
         }, "optional": {
             "model_name": (["auto"] + [m for m in models if m != "auto"], {
                 "default": "auto",
-                "tooltip": "Audio8 model directories found under the registered "
-                           "audio8_tts folders (models/audio8_tts plus any "
-                           "extra_model_paths.yaml entry); a directory qualifies "
-                           "by containing config.json. 'auto' uses the default "
-                           "Audio8-TTS-Realistic-0.6b, or the only model found. "
-                           "Ignored when model_path is set."}),
+                "tooltip": "Audio8 model directories and single-file packs found "
+                           "under the registered audio8_tts folders "
+                           "(models/audio8_tts plus any extra_model_paths.yaml "
+                           "entry); a directory qualifies by containing config.json, "
+                           "a pack by its .safetensors extension. 'auto' uses the "
+                           "default Audio8-TTS-Realistic-0.6b directory, or the only "
+                           "model found. Ignored when model_path is set. Use the "
+                           "Audio8 Pack Model node to create a pack from a directory."}),
             "model_path": ("STRING", {
                 "default": "",
                 "tooltip": "Absolute path to an Audio8 model directory (the "
                            "folder containing config.json, codec.pth and the "
                            "weights, e.g. a Stability-Matrix shared-models "
-                           "folder). Takes precedence over model_name. Audio8 "
-                           "loads a directory, not a single file."}),
+                           "folder) or to an Audio8 .safetensors pack file. "
+                           "Takes precedence over model_name."}),
         }}
 
     @classmethod
@@ -50,6 +53,9 @@ class Audio8ModelLoader:
         # handful of files; stat-ing them per queue check is cheap.
         try:
             target = local_model_path(model_name, model_path)
+            if target.is_file():
+                stat = target.stat()
+                return (dtype, model_name, "pack", stat.st_size, stat.st_mtime)
             files = [p for p in target.rglob("*") if p.is_file()]
         except Exception:
             # Nothing resolvable (or not yet placed): fall back to the root list,
@@ -64,6 +70,56 @@ class Audio8ModelLoader:
 
     def load(self, dtype="auto", model_name="auto", model_path=""):
         return (load_model(dtype, model_name, model_path),)
+
+
+class Audio8PackModel:
+    """Fold an Audio8 model directory into one .safetensors pack file."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        try:
+            models = available_models()
+        except Exception:
+            models = []
+        return {"optional": {
+            "model_name": (["auto"] + [m for m in models if m != "auto"], {
+                "default": "auto",
+                "tooltip": "Source model directory (must contain config.json, "
+                           "codec.pth and model.safetensors). Packs are not a "
+                           "valid source; they are the output of this node."}),
+            "model_path": ("STRING", {
+                "default": "",
+                "tooltip": "Absolute path to the source model directory. Takes "
+                           "precedence over model_name."}),
+            "pack_name": ("STRING", {
+                "default": "",
+                "tooltip": "File name for the pack inside models/audio8_tts "
+                           "(without .safetensors). Empty uses the source "
+                           "directory name."}),
+            "overwrite": ("BOOLEAN", {
+                "default": False,
+                "tooltip": "Replace an existing pack file of the same name."}),
+        }}
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("pack_name",)
+    FUNCTION = "pack"
+    CATEGORY = "audio/audio8"
+    OUTPUT_NODE = True
+
+    def pack(self, model_name="auto", model_path="", pack_name="", overwrite=False):
+        source = local_model_path(model_name, model_path)
+        if not source.is_dir():
+            raise ValueError(
+                "[Audio8] Audio8 Pack Model needs a model directory as source; "
+                f"got {source}. Pick the directory in model_name or set model_path.")
+        name = (pack_name or source.name).strip().strip('"')
+        if not name or "/" in name or "\\" in name or ".." in name:
+            raise ValueError(f"[Audio8] Invalid pack_name: {pack_name!r}")
+        root = folder_paths.get_folder_paths("audio8_tts")[0]
+        target = Path(root) / (name + ".safetensors")
+        pack_model_directory(source, target, overwrite=bool(overwrite))
+        return (target.name,)
 
 
 class Audio8EncodeReference:
@@ -175,6 +231,7 @@ class Audio8TTS:
 
 NODE_CLASS_MAPPINGS = {
     "Audio8ModelLoader": Audio8ModelLoader,
+    "Audio8PackModel": Audio8PackModel,
     "Audio8EncodeReference": Audio8EncodeReference,
     "Audio8SaveVoice": Audio8SaveVoice,
     "Audio8LoadVoice": Audio8LoadVoice,
@@ -182,6 +239,7 @@ NODE_CLASS_MAPPINGS = {
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "Audio8ModelLoader": "Audio8 Model Loader",
+    "Audio8PackModel": "Audio8 Pack Model",
     "Audio8EncodeReference": "Audio8 Encode Reference",
     "Audio8SaveVoice": "Audio8 Save Voice",
     "Audio8LoadVoice": "Audio8 Load Voice",

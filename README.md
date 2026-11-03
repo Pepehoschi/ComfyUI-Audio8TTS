@@ -24,11 +24,29 @@ The loader uses local files only. Architecture code executed during loading is
 either the model directory's own files or the node's audited bundled copy;
 in both cases use model weight files from a trusted source.
 
+### Single-file packs
+
+The `Audio8 Pack Model` node folds a model directory into one
+`.safetensors` file inside `models/audio8_tts`, the way ComfyUI's own
+checkpoint loaders work: language-model tensors under `model.`, codec
+tensors under `codec.`, and the config/tokenizer JSONs as safetensors
+header metadata. The pack appears in the loader's `model_name` dropdown
+next to model directories; the source directory stays untouched. Pack
+loading instantiates the node's bundled Apache-2.0 architecture directly
+and applies the weights via `load_state_dict` - no `trust_remote_code`,
+no dynamic module, no Auto* registration. Verified sample-identical to
+the directory path (maxdiff 0.0 against the BF16 anchor). The metadata
+key `audio8_quant` is reserved: pre-quantised int8-convrot packs will
+load through the same structure once implemented; until then loading
+such a pack fails with a clear error and `dtype=int8_convrot` keeps
+quantising on the fly.
+
 ## Nodes
 
 Load `examples/Audio8-Start.json` for a frontend canvas workflow (Model Loader, Load Voice, TTS, Save Audio). On this machine it selects `Audio8-Referenz.safetensors`, encoded from the supplied reference recording. Other installations must create their own voice preset first.
 
 - Audio8 Model Loader: shared model and processor; CPU uses FP32.
+- Audio8 Pack Model: folds a model directory into one `.safetensors` pack under `models/audio8_tts/`.
 - Audio8 Encode Reference: ComfyUI audio plus its transcript becomes reusable codec codes.
 - Audio8 Save Voice: atomically saves a reference under `models/audio8_voices/`.
 - Audio8 Load Voice: loads codes and transcript without the original audio file.
@@ -38,7 +56,7 @@ Connect the model loader to Encode Reference and TTS. Connect Load Audio to Enco
 
 ## Current verification
 
-Data validation, preset roundtrips and mocked loader/runtime tests run without weights. The first inference checks missed corrupted non-persistent RoPE buffers after Transformers 5 loading; nonempty audio alone was insufficient. The loader now rebuilds these buffers using Audio8's own helper. Codec encoding and decoding also disable TorchScript optimization locally because PyTorch 2.8.0+cu128 changed BF16 results after warmup. No global Torch configuration is changed.
+Data validation, preset roundtrips and mocked loader/runtime tests run without weights. The first inference checks missed corrupted non-persistent RoPE buffers after Transformers 5 loading; nonempty audio alone was insufficient. The loader now rebuilds these buffers using Audio8's own helper. Codec encoding and decoding also disable TorchScript optimization locally because PyTorch 2.8.0+cu128 changed BF16 results after warmup. No global Torch configuration is changed. The pack format was verified end to end on a live server: the real model packed through the node, then two anchor generations through the pack were sample-identical to the directory baseline (524288 samples, maxdiff 0.0).
 
 The corrected CUDA/BF16 path passes repeated-encoding, preset-roundtrip and Direct-vs-Cached tests with the supplied recording, reaches EOS, and produces an audible-level waveform. Listening evaluation remains necessary. Restart ComfyUI after updating: its cached model and imported runtime otherwise retain the old behavior. The invalid generated test preset has been moved out of the voices directory.
 

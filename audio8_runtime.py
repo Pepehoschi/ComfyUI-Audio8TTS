@@ -135,6 +135,8 @@ def load_model(dtype="auto", model_name="auto", model_path=""):
     if dtype not in dtypes and dtype != INT8_CONVROT:
         raise ValueError(f"[Audio8] Unknown dtype: {dtype}")
     compute_dtype = torch.float32 if device.type == "cpu" else dtypes.get(dtype, torch.bfloat16)
+    if model_path.suffix.lower() == ".safetensors":
+        return _load_pack_bundle(model_path, dtype, compute_dtype, device)
     if not all((model_path / name).is_file() for name in ARCH_CODE_FILES):
         mirror = build_arch_mirror(model_path)
         logger.info("[Audio8] %s ships no architecture files; loading through the "
@@ -157,6 +159,30 @@ def load_model(dtype="auto", model_name="auto", model_path=""):
     model.fast_freqs_cis = precompute_rope(config.num_codebooks, config.fast_head_dim, config.rope_base)
     model.eval()
     model.to(device)
+    quantization = "none"
+    if dtype == INT8_CONVROT:
+        quantize_model_int8_convrot(model)
+        quantization = INT8_CONVROT
+    return Audio8ModelBundle(model, processor, MODEL_ID, device, compute_dtype,
+                             int(model.config.codec_sample_rate), quantization=quantization)
+
+
+def _load_pack_bundle(pack_path, dtype, compute_dtype, device):
+    """Load a single-file pack via the node's bundled architecture.
+
+    No trust_remote_code and no Auto* registration: audio8_pack builds the
+    config, both modules and the tokenizer from pack metadata plus the
+    audited Apache-2.0 copies in audio8_arch, and applies weights through
+    load_state_dict with an exact key-set check.
+    """
+
+    from .audio8_pack import load_pack_model
+
+    logger.info("[Audio8] Loading %s pack %s as %s on %s",
+                MODEL_ID, pack_path, compute_dtype, device)
+    model, processor = load_pack_model(pack_path, compute_dtype, device)
+    validate_model_config(model.config, pack_path)
+    model.to(device=device, dtype=compute_dtype)
     quantization = "none"
     if dtype == INT8_CONVROT:
         quantize_model_int8_convrot(model)
