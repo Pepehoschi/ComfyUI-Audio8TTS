@@ -22,7 +22,7 @@ const STYLE = `
 .audio8-tag-known { color:#15803d; font-weight:600; }
 .audio8-tag-unknown { color:#b91c1c; font-weight:600; }
 .audio8-tag-escape { color:#9ca3af; }
-.audio8-tag-src-hidden textarea.comfy-multiline-input { color:transparent; caret-color:auto; }
+.audio8-tag-src-hidden textarea.comfy-multiline-input { color:transparent; }
 `;
 
 function styleOnce() {
@@ -106,10 +106,33 @@ function copyFont(ta, mirror) {
   const cs = getComputedStyle(ta);
   for (const prop of ["fontFamily", "fontSize", "fontWeight", "fontStyle",
                       "lineHeight", "letterSpacing", "wordSpacing",
-                      "paddingTop", "paddingRight", "paddingBottom",
-                      "paddingLeft", "whiteSpace", "wordBreak", "tabSize"]) {
+                      "whiteSpace", "wordBreak", "tabSize"]) {
     mirror.style[prop] = cs[prop];
   }
+  // color:transparent on the textarea also hides an auto caret; pin the
+  // caret colour and the mirror's plain-text colour to the real text
+  // colour captured before the transparent class applies.
+  ta.style.caretColor = cs.color;
+  mirror.style.color = cs.color;
+  mirror.style.boxSizing = "border-box";
+}
+
+function syncBox(ta, mirror) {
+  // The mirror sits on the textarea's border box but has no border and no
+  // scrollbar. Fold border and (vertical) scrollbar width into the mirror
+  // padding so text starts at the exact same pixel. Recomputed per paint:
+  // scrollbar presence changes with content height.
+  const cs = getComputedStyle(ta);
+  const borderLeft = parseFloat(cs.borderLeftWidth) || 0;
+  const borderRight = parseFloat(cs.borderRightWidth) || 0;
+  const borderTop = parseFloat(cs.borderTopWidth) || 0;
+  const borderBottom = parseFloat(cs.borderBottomWidth) || 0;
+  const scrollbar = Math.max(0,
+    ta.offsetWidth - ta.clientWidth - borderLeft - borderRight);
+  mirror.style.paddingTop = `${(parseFloat(cs.paddingTop) || 0) + borderTop}px`;
+  mirror.style.paddingRight = `${(parseFloat(cs.paddingRight) || 0) + borderRight + scrollbar}px`;
+  mirror.style.paddingBottom = `${(parseFloat(cs.paddingBottom) || 0) + borderBottom}px`;
+  mirror.style.paddingLeft = `${(parseFloat(cs.paddingLeft) || 0) + borderLeft}px`;
 }
 
 const hookedElements = new WeakSet();
@@ -145,7 +168,10 @@ function hookWidget(node, widget) {
   host.classList.add("audio8-tag-src-hidden");
 
   const state = { node, ta, inner, mirror };
-  const repaint = () => { try { paint(state); } catch (err) { console.warn("[audio8-tag]", err); } };
+  const repaint = () => {
+    try { syncBox(state.ta, state.mirror); paint(state); }
+    catch (err) { console.warn("[audio8-tag]", err); }
+  };
   ta.addEventListener("input", repaint);
   ta.addEventListener("scroll", () => {
     inner.style.transform = `translate(${-ta.scrollLeft}px, ${-ta.scrollTop}px)`;
