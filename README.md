@@ -25,7 +25,7 @@ the `audio8/` subfolder of the `diffusion_models` root that already holds
 one, e.g.:
 
 ```text
-ComfyUI/models/diffusion_models/audio8/Audio8-TTS-Realistic-0.6b.safetensors
+ComfyUI/models/diffusion_models/audio8/Audio8-TTS-Realistic-0.6b-BF16.safetensors
 ```
 
 The source directory stays untouched and keeps serving as the converter
