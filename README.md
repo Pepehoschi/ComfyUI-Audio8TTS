@@ -61,7 +61,7 @@ sample-identical to on-the-fly `dtype=int8_convrot` (maxdiff 0.0).
 
 ## Nodes
 
-Load `examples/Audio8-Start.json` for a frontend canvas workflow (Model Loader, Load Voice, TTS, Save Audio). On this machine it selects `Audio8-Referenz.safetensors`, encoded from the supplied reference recording. Other installations must create their own voice preset first.
+Load `example_workflows/Audio8-Start.json` for a frontend canvas workflow (Model Loader, Load Voice, TTS, Save Audio). On this machine it selects `Audio8-Referenz.safetensors`, encoded from the supplied reference recording. Other installations must create their own voice preset first. `example_workflows/Audio8-Voice-Tags.json` shows per-segment emotional voices with a voice set and a tagged script. Both files appear in ComfyUI's Workflow Templates browser under `ComfyUI-Audio8TTS`.
 
 - Audio8 Model Loader: shared model and processor; `ckpt_name` picker over the `diffusion_models` folders; CPU uses FP32.
 - Audio8 Pack Model: folds a model directory into one `.safetensors` pack under `audio8/` in the `diffusion_models` folder that already holds one; `quantize="int8_convrot"` writes a separate `…-int8convrot.safetensors`.
@@ -82,7 +82,7 @@ The corrected CUDA/BF16 path passes repeated-encoding, preset-roundtrip and Dire
 
 Long-text defaults are 130 target / 150 maximum characters, 180 ms between chunks and 350 ms at paragraph boundaries. One generator advances through the whole run, including retries. Reference codes are reused across chunks. Short text keeps the direct path; `chunking=disabled` sends the whole text to Audio8. Each decoded chunk receives a 110 ms fade-out before its pause; `fade_out_ms=0` disables it. Audio length is preserved. No trailing pause or automatic crossfade is added.
 
-The remaining example files in `examples/` are API prompt graphs, not frontend canvas workflows; `Audio8-Start.json` above is the only canvas file. `text_to_speech.api.json` synthesizes text, `save_voice.api.json` encodes and saves a reference, and `saved_voice_tts.api.json` loads a saved voice. Replace the example audio filename and transcript with matching local data. A saved-voice graph has completed on the local ComfyUI server and saved FLAC through Save Audio. A second request reused the cached loader and voice nodes. An actual server restart remains unverified.
+The API prompt graphs live in `api_examples/` (`text_to_speech.api.json` synthesizes text, `save_voice.api.json` encodes and saves a reference, `saved_voice_tts.api.json` loads a saved voice); they are POST bodies for the `/prompt` API, not canvas files, so they stay out of `example_workflows/` and the template browser. Replace the example audio filename and transcript with matching local data. A saved-voice graph has completed on the local ComfyUI server and saved FLAC through Save Audio. A second request reused the cached loader and voice nodes. An actual server restart remains unverified.
 
 ## Performance
 
