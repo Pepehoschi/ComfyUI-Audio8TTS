@@ -19,8 +19,11 @@ const STYLE = `
   background:transparent; pointer-events:none; white-space:pre-wrap;
   overflow:hidden; color:inherit; z-index:0; }
 .audio8-tag-mirror > .audio8-tag-inner { display:block; }
-.audio8-tag-known { color:#15803d; font-weight:600; }
-.audio8-tag-unknown { color:#b91c1c; font-weight:600; }
+/* Colour only here: any width-changing style (bold, letter-spacing)
+   shifts mirror glyphs away from the textarea's own metrics, which
+   breaks caret and double-click selection alignment after each tag. */
+.audio8-tag-known { color:#15803d; }
+.audio8-tag-unknown { color:#b91c1c; }
 .audio8-tag-escape { color:#9ca3af; }
 .audio8-tag-src-hidden textarea.comfy-multiline-input { color:transparent; }
 `;
@@ -129,6 +132,10 @@ function syncBox(ta, mirror) {
   const borderBottom = parseFloat(cs.borderBottomWidth) || 0;
   const scrollbar = Math.max(0,
     ta.offsetWidth - ta.clientWidth - borderLeft - borderRight);
+  // Track the textarea itself, not just the host: Vue resizes the textarea
+  // independently of its container.
+  mirror.style.width = `${ta.offsetWidth}px`;
+  mirror.style.height = `${ta.offsetHeight}px`;
   mirror.style.paddingTop = `${(parseFloat(cs.paddingTop) || 0) + borderTop}px`;
   mirror.style.paddingRight = `${(parseFloat(cs.paddingRight) || 0) + borderRight + scrollbar}px`;
   mirror.style.paddingBottom = `${(parseFloat(cs.paddingBottom) || 0) + borderBottom}px`;
@@ -172,10 +179,25 @@ function hookWidget(node, widget) {
     try { syncBox(state.ta, state.mirror); paint(state); }
     catch (err) { console.warn("[audio8-tag]", err); }
   };
+  const resync = () => {
+    try { syncBox(state.ta, state.mirror); }
+    catch (err) { console.warn("[audio8-tag]", err); }
+  };
   ta.addEventListener("input", repaint);
   ta.addEventListener("scroll", () => {
     inner.style.transform = `translate(${-ta.scrollLeft}px, ${-ta.scrollTop}px)`;
+    // A scrollbar appearing/disappearing steals width and re-wraps the
+    // textarea without any input event; re-fold it into the mirror padding.
+    resync();
   });
+  // Node resizes, Vue editor toggles and container relayouts change the
+  // textarea box without firing input; without this the mirror keeps the
+  // old wrap width and visibly drifts from the selection/caret.
+  if (typeof ResizeObserver !== "undefined") {
+    const ro = new ResizeObserver(() => repaint());
+    ro.observe(element);
+    ro.observe(ta);
+  }
   repaint();
 }
 
