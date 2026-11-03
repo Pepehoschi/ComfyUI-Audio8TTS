@@ -20,12 +20,18 @@
       "mode": 0,
       "inputs": [
         {
+          "name": "ckpt_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "ckpt_name"
+          }
+        },
+        {
           "name": "dtype",
           "type": "COMBO",
           "widget": {
             "name": "dtype"
-          },
-          "link": null
+          }
         }
       ],
       "outputs": [
@@ -42,10 +48,12 @@
         "Node name for S&R": "Audio8ModelLoader"
       },
       "widgets_values": [
+        "audio8/Audio8-TTS-Realistic-0.6b.safetensors",
         "auto"
       ],
       "widgets_values_named": {
-        "dtype": "auto"
+        "dtype": "auto",
+        "ckpt_name": "audio8/Audio8-TTS-Realistic-0.6b.safetensors"
       },
       "title": "Audio8 Modell laden (cu128)"
     },

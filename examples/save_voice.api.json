@@ -1,5 +1,5 @@
 {
-  "1": {"class_type": "Audio8ModelLoader", "inputs": {"dtype": "auto"}},
+  "1": {"class_type": "Audio8ModelLoader", "inputs": {"ckpt_name": "audio8/Audio8-TTS-Realistic-0.6b.safetensors", "dtype": "auto"}},
   "2": {"class_type": "LoadAudio", "inputs": {"audio": "reference.wav"}},
   "3": {
     "class_type": "Audio8EncodeReference",

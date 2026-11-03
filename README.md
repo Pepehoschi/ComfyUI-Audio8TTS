@@ -8,45 +8,56 @@ The project targets the existing ComfyUI cu128 installation. Do not separately i
 
 The integration supports Transformers `>=4.57.0,<6`. The complete local model, processor and codec have been tested with Transformers 5.9.0 and Torch 2.8.0+cu128 on an RTX 4090. No packages were changed. Model files were copied from the existing HuggingFace cache.
 
-Place the complete model, including its custom Python files, tokenizer, weights and `codec.pth`, in:
+Load an Audio8 **pack** - one `.safetensors` file - through the
+`Audio8 Model Loader` node. Its required `ckpt_name` input is the same
+picker the native `Load Diffusion Model` node uses: it lists the files in
+the `diffusion_models` folders (`ComfyUI/models/diffusion_models` plus
+every root mapped in `extra_model_paths.yaml`, e.g. a Stability-Matrix
+shared-models folder), shows them as a searchable folder tree and
+serializes only the relative path into the workflow.
+
+Create a pack once from a complete model directory (the HuggingFace
+download form: `config.json`, `codec.pth`, weights, tokenizer and custom
+Python files) with the `Audio8 Pack Model` node. It writes the pack to
+the `audio8/` subfolder of the first `diffusion_models` root, e.g.:
 
 ```text
-ComfyUI/models/audio8_tts/Audio8-TTS-Realistic-0.6b/
+ComfyUI/models/diffusion_models/audio8/Audio8-TTS-Realistic-0.6b.safetensors
 ```
 
-The loader looks in every folder registered under the `audio8_tts` template, so ComfyUI's standard mechanism for custom locations applies as it does for the built-in loaders: put `audio8_tts: D:\YourModels\audio8_tts` in `extra_model_paths.yaml` and any model directory (a folder containing `config.json` and `codec.pth`, also one level nested) below it becomes selectable. The Model Loader's optional `model_name` input lists the discovered directories; `auto` prefers the default `Audio8-TTS-Realistic-0.6b`, falls back to the only model found, and asks for a selection when several exist.
+The source directory stays untouched and keeps serving as the converter
+input; after packing it has no other function inside the nodes and can
+remain on disk as a backup of the originals. Model-directory loading was
+removed from the loader: a pack carries every weight, config and
+tokenizer in one file, and loading instantiates the node's audited
+Apache-2.0 architecture copy (`audio8_arch/`, sha256 recorded in
+`audio8_arch/__init__.py`, attribution in `NOTICE.upstream`) directly and
+applies weights via `load_state_dict` - no `trust_remote_code`, no
+dynamic modules, no Auto* registration anywhere. Do not register the
+`audio8_arch` classes with the transformers Auto* factories:
+transformers 5.x then silently keeps constructor-initialized weights
+instead of loading the checkpoint (verified on 5.9.0).
 
-Audio8 loads a model *directory*, never a single file. For models outside every registered root (for example a Stability-Matrix shared-models folder), set the optional `model_path` to the absolute path of the model directory; it takes precedence over `model_name`. The path must be absolute and the directory must contain `config.json` and `codec.pth`.
+### Pack format
 
-Model directories may omit the four Arktts architecture `.py` files. When they are absent, the node creates a mirror directory next to the model (`<model>__with_arch`, entries are hard links to the original files, plus verbatim copies of its bundled Apache-2.0 architecture from `audio8_arch/`, sha256 recorded in `audio8_arch/__init__.py`, attribution in `NOTICE.upstream`) and loads through it via the normal dynamic-module path. The mirror is a fingerprint-tracked cache; delete it any time and it rebuilds. The architecture code executed is then the node's audited copy, not files from the model folder. Do not register `audio8_arch` classes with the transformers Auto* factories: transformers 5.x then silently keeps constructor-initialized weights instead of loading the checkpoint (verified on 5.9.0).
-
-The loader uses local files only. Architecture code executed during loading is
-either the model directory's own files or the node's audited bundled copy;
-in both cases use model weight files from a trusted source.
-
-### Single-file packs
-
-The `Audio8 Pack Model` node folds a model directory into one
-`.safetensors` file inside `models/audio8_tts`, the way ComfyUI's own
-checkpoint loaders work: language-model tensors under `model.`, codec
-tensors under `codec.`, and the config/tokenizer JSONs as safetensors
-header metadata. The pack appears in the loader's `model_name` dropdown
-next to model directories; the source directory stays untouched. Pack
-loading instantiates the node's bundled Apache-2.0 architecture directly
-and applies the weights via `load_state_dict` - no `trust_remote_code`,
-no dynamic module, no Auto* registration. Verified sample-identical to
-the directory path (maxdiff 0.0 against the BF16 anchor). The metadata
-key `audio8_quant` is reserved: pre-quantised int8-convrot packs will
-load through the same structure once implemented; until then loading
-such a pack fails with a clear error and `dtype=int8_convrot` keeps
-quantising on the fly.
+A pack folds one model directory into one `.safetensors` file, the way
+ComfyUI's own checkpoint loaders work: language-model tensors under
+`model.`, codec tensors under `codec.`, and the config/tokenizer JSONs
+as safetensors header metadata. Loading validates the `audio8_format`
+metadata key, so picking a foreign `.safetensors` (for example a real
+UNet from the same folder) fails early with a clear error. Verified
+sample-identical to the former directory path (maxdiff 0.0 against the
+BF16 anchor, through the native picker). The metadata key `audio8_quant`
+is reserved: pre-quantised int8-convrot packs will load through the same
+structure once implemented; until then loading such a pack fails with a
+clear error and `dtype=int8_convrot` keeps quantising on the fly.
 
 ## Nodes
 
 Load `examples/Audio8-Start.json` for a frontend canvas workflow (Model Loader, Load Voice, TTS, Save Audio). On this machine it selects `Audio8-Referenz.safetensors`, encoded from the supplied reference recording. Other installations must create their own voice preset first.
 
-- Audio8 Model Loader: shared model and processor; CPU uses FP32.
-- Audio8 Pack Model: folds a model directory into one `.safetensors` pack under `models/audio8_tts/`.
+- Audio8 Model Loader: shared model and processor; `ckpt_name` picker over the `diffusion_models` folders; CPU uses FP32.
+- Audio8 Pack Model: folds a model directory into one `.safetensors` pack under `audio8/` in the first `diffusion_models` folder.
 - Audio8 Encode Reference: ComfyUI audio plus its transcript becomes reusable codec codes.
 - Audio8 Save Voice: atomically saves a reference under `models/audio8_voices/`.
 - Audio8 Load Voice: loads codes and transcript without the original audio file.

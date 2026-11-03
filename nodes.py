@@ -2,7 +2,8 @@ from pathlib import Path
 
 import folder_paths
 
-from .audio8_paths import available_models, available_packs, local_model_path
+from .audio8_paths import (PACK_SUBFOLDER, available_models, local_model_dir,
+                           pack_target_path, resolve_pack)
 from .audio8_pack import pack_model_directory
 from .audio8_runtime import load_model, encode_reference, generate
 from .voice_presets import save_voice, load_voice, voice_signature
@@ -12,10 +13,17 @@ class Audio8ModelLoader:
     @classmethod
     def INPUT_TYPES(cls):
         try:
-            models = available_models() + available_packs()
+            packs = folder_paths.get_filename_list("diffusion_models")
         except Exception:
-            models = []
+            packs = []
         return {"required": {
+            "ckpt_name": (packs, {
+                "tooltip": "Audio8 packs (*.safetensors) from the diffusion_models "
+                           "folders - models/diffusion_models plus every "
+                           "extra_model_paths.yaml entry, the same folders the "
+                           "native Load Diffusion Model node lists. Create a pack "
+                           "from an Audio8 model directory once with the "
+                           "Audio8 Pack Model node."}),
             "dtype": ([ "auto", "bfloat16", "float16", "float32", "int8_convrot"], {
                 "tooltip": "int8_convrot loads bfloat16 activations and stores the language "
                            "model's nn.Linear weights as int8 with per-group rotation "
@@ -25,51 +33,28 @@ class Audio8ModelLoader:
                            "generation is slower and was only verified without cuda_graphs "
                            "and with comfy_ops off (comfy_ops is ignored with a warning for "
                            "quantised models)."
-                           " A swapped checkpoint directory is detected and reloads."}),
-        }, "optional": {
-            "model_name": (["auto"] + [m for m in models if m != "auto"], {
-                "default": "auto",
-                "tooltip": "Audio8 model directories and single-file packs found "
-                           "under the registered audio8_tts folders "
-                           "(models/audio8_tts plus any extra_model_paths.yaml "
-                           "entry); a directory qualifies by containing config.json, "
-                           "a pack by its .safetensors extension. 'auto' uses the "
-                           "default Audio8-TTS-Realistic-0.6b directory, or the only "
-                           "model found. Ignored when model_path is set. Use the "
-                           "Audio8 Pack Model node to create a pack from a directory."}),
-            "model_path": ("STRING", {
-                "default": "",
-                "tooltip": "Absolute path to an Audio8 model directory (the "
-                           "folder containing config.json, codec.pth and the "
-                           "weights, e.g. a Stability-Matrix shared-models "
-                           "folder) or to an Audio8 .safetensors pack file. "
-                           "Takes precedence over model_name."}),
+                           " A swapped pack file is detected and reloads."}),
         }}
 
     @classmethod
-    def IS_CHANGED(cls, dtype="auto", model_name="auto", model_path=""):
-        # The model path is fixed per installation, so a replaced checkpoint would
-        # otherwise keep serving from the node cache forever. The directory holds a
-        # handful of files; stat-ing them per queue check is cheap.
+    def IS_CHANGED(cls, ckpt_name="", dtype="auto"):
+        # A replaced pack file would otherwise keep serving from the node
+        # cache forever; stat-ing the single file per queue check is cheap.
         try:
-            target = local_model_path(model_name, model_path)
-            if target.is_file():
-                stat = target.stat()
-                return (dtype, model_name, "pack", stat.st_size, stat.st_mtime)
-            files = [p for p in target.rglob("*") if p.is_file()]
+            target = resolve_pack(ckpt_name)
+            stat = target.stat()
+            return (dtype, ckpt_name, stat.st_size, stat.st_mtime)
         except Exception:
-            # Nothing resolvable (or not yet placed): fall back to the root list,
-            # so adding or remodelling one still invalidates the cache.
-            return (dtype, model_name, "unresolved")
-        return (dtype, model_name, len(files), sum(p.stat().st_size for p in files),
-                max((p.stat().st_mtime for p in files), default=0.0))
+            # Nothing resolvable (removed or not yet packed): the name alone
+            # still invalidates the cache when it changes.
+            return (dtype, ckpt_name, "unresolved")
 
     RETURN_TYPES = ("AUDIO8_MODEL",)
     FUNCTION = "load"
     CATEGORY = "audio/audio8"
 
-    def load(self, dtype="auto", model_name="auto", model_path=""):
-        return (load_model(dtype, model_name, model_path),)
+    def load(self, ckpt_name, dtype="auto"):
+        return (load_model(dtype, ckpt_name),)
 
 
 class Audio8PackModel:
@@ -93,9 +78,10 @@ class Audio8PackModel:
                            "precedence over model_name."}),
             "pack_name": ("STRING", {
                 "default": "",
-                "tooltip": "File name for the pack inside models/audio8_tts "
-                           "(without .safetensors). Empty uses the source "
-                           "directory name."}),
+                "tooltip": "File name for the pack inside the audio8/ subfolder "
+                           "of the first diffusion_models folder (without "
+                           ".safetensors). Empty uses the source directory "
+                           "name."}),
             "overwrite": ("BOOLEAN", {
                 "default": False,
                 "tooltip": "Replace an existing pack file of the same name."}),
@@ -108,18 +94,14 @@ class Audio8PackModel:
     OUTPUT_NODE = True
 
     def pack(self, model_name="auto", model_path="", pack_name="", overwrite=False):
-        source = local_model_path(model_name, model_path)
-        if not source.is_dir():
-            raise ValueError(
-                "[Audio8] Audio8 Pack Model needs a model directory as source; "
-                f"got {source}. Pick the directory in model_name or set model_path.")
-        name = (pack_name or source.name).strip().strip('"')
-        if not name or "/" in name or "\\" in name or ".." in name:
-            raise ValueError(f"[Audio8] Invalid pack_name: {pack_name!r}")
-        root = folder_paths.get_folder_paths("audio8_tts")[0]
-        target = Path(root) / (name + ".safetensors")
+        source = local_model_dir(model_name, model_path)
+        target = pack_target_path(pack_name or source.name)
+        if target.exists() and not overwrite:
+            raise FileExistsError(
+                f"[Audio8] Pack {target} already exists; set overwrite to replace it.")
+        target.parent.mkdir(parents=True, exist_ok=True)
         pack_model_directory(source, target, overwrite=bool(overwrite))
-        return (target.name,)
+        return (f"{PACK_SUBFOLDER}/{target.name}",)
 
 
 class Audio8EncodeReference:

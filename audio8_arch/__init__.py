@@ -14,10 +14,11 @@ directory of Audio8-TTS-Realistic-0.6b):
     modeling_arktts_codec.py    e1d6b0e1ef1e9ad303dc01d45d86229cf7f2e98d06a7b426234a7e4d7e3ede68
     processing_arktts.py        eba6ecb6b7f0e221bcd19c5e3fe5978e677faf6b362912ff4febc08c3dc7f9df
 
-Usage: when a model directory lacks these files, audio8_runtime.build_arch_mirror
-creates a mirror of the model directory and copies these files into it;
-transformers then resolves the architecture through its regular dynamic-module
-path. Do not register these classes with the transformers Auto* factories:
-transformers 5.x then skips materializing the checkpoint weights and the model
-silently keeps constructor-initialized values (verified on transformers 5.9.0).
+Usage: audio8_pack.load_pack_model instantiates these classes directly when
+loading a single-file pack and fills them through load_state_dict; no
+trust_remote_code, dynamic-module resolution or Auto* registration is
+involved. Do not register these classes with the transformers Auto*
+factories: transformers 5.x then skips materializing the checkpoint weights
+and the model silently keeps constructor-initialized values (verified on
+transformers 5.9.0).
 """
