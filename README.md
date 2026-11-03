@@ -18,11 +18,42 @@ every root mapped in `extra_model_paths.yaml`, e.g. a Stability-Matrix
 shared-models folder), shows them as a searchable folder tree and
 serializes only the relative path into the workflow.
 
+## Models
+
+The nodes load packs from
+[Dhrog/Audio8-TTS-Realistic-0.6b-ComfyUI-Packs](https://huggingface.co/Dhrog/Audio8-TTS-Realistic-0.6b-ComfyUI-Packs)
+(model card, SHA256 hashes, measurements). Download **one** file directly:
+
+| Pack | Direct download | Use when |
+| --- | --- | --- |
+| BF16 | [Audio8-TTS-Realistic-0.6b-BF16.safetensors](https://huggingface.co/Dhrog/Audio8-TTS-Realistic-0.6b-ComfyUI-Packs/resolve/main/Audio8-TTS-Realistic-0.6b-BF16.safetensors) | default: best quality, fastest (~54 tok/s with CUDA graphs `frame` scope) |
+| INT8 | [Audio8-TTS-Realistic-0.6b-int8convrot.safetensors](https://huggingface.co/Dhrog/Audio8-TTS-Realistic-0.6b-ComfyUI-Packs/resolve/main/Audio8-TTS-Realistic-0.6b-int8convrot.safetensors) | 16% smaller download, INT8 weights, bit-identical across sampling modes |
+
+Place the downloaded file in an `audio8/` subfolder of any
+`diffusion_models` root, exactly:
+
+```text
+ComfyUI/models/diffusion_models/audio8/Audio8-TTS-Realistic-0.6b-BF16.safetensors
+```
+
+(or the same `audio8/` subfolder under a root mapped in
+`extra_model_paths.yaml`). Press `R` in ComfyUI to refresh the file
+catalogue, then pick the file in `Audio8 Model Loader` with
+`dtype="auto"`. Nothing else is required: a pack is self-contained
+(language-model weights, codec, config, tokenizer and custom architecture
+metadata in one file). Quantisation is chosen from the pack's
+`audio8_quant` metadata key, never from the file name, so renaming the
+pack only changes how it is labelled.
+
+The packs are derived from `Edge0/Audio8-TTS-Realistic-0.6b` (Apache-2.0;
+`LICENSE` and `NOTICE` ship in the HF repo). A community re-packaging,
+not an official Edge0 release.
+
 Create a pack once from a complete model directory (the HuggingFace
 download form: `config.json`, `codec.pth`, weights, tokenizer and custom
-Python files) with the `Audio8 Pack Model` node. It writes the pack to
-the `audio8/` subfolder of the `diffusion_models` root that already holds
-one, e.g.:
+Python files) with the `Audio8 Pack Model` node as an alternative to
+downloading. It writes the pack to the `audio8/` subfolder of the
+`diffusion_models` root that already holds one, e.g.:
 
 ```text
 ComfyUI/models/diffusion_models/audio8/Audio8-TTS-Realistic-0.6b-BF16.safetensors
