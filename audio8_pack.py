@@ -11,7 +11,12 @@ registered custom classes - verified on 5.9.0).
 
 Format v1 metadata keys:
     audio8_format            -> "1"
-    audio8_quant             -> "none" (reserved: future int8-convrot packs)
+    audio8_quant             -> "none" or "int8_convrot"
+    audio8_int8              -> json map module path -> int8 Params fields,
+                                present only when audio8_quant=int8_convrot;
+                                the quantised weights keep the plain
+                                "<path>.weight" key as int8 tensors and gain
+                                a "<path>.weight_scale" float32 companion
     audio8_model_id          -> upstream model id
     audio8_created           -> ISO-8601 UTC creation stamp
     audio8_config            -> config.json text
@@ -37,6 +42,7 @@ from safetensors import safe_open
 from safetensors.torch import load_file as safetensors_load_file
 from safetensors.torch import save_file as safetensors_save_file
 
+from .audio8_quantization import INT8_CONVROT, INT8_CONVROT_GROUP_SIZE
 from .audio8_types import MODEL_ID
 
 
@@ -45,8 +51,10 @@ logger = logging.getLogger(__name__)
 PACK_SUFFIX = ".safetensors"
 PACK_FORMAT = "1"
 PACK_EXTENSION = "none"
+PACK_QUANTIZATIONS = (PACK_EXTENSION, INT8_CONVROT)
 MODEL_PREFIX = "model."
 CODEC_PREFIX = "codec."
+INT8_SCALE_SUFFIX = ".weight_scale"
 
 # metadata key -> file name inside a model directory
 PACK_JSON_FILES = {
@@ -68,14 +76,21 @@ def is_pack_path(path) -> bool:
     return Path(path).suffix.lower() == PACK_SUFFIX
 
 
-def pack_model_directory(model_dir, target, overwrite=False) -> dict:
+def pack_model_directory(model_dir, target, overwrite=False, quantize=PACK_EXTENSION) -> dict:
     """Pack a model directory into one .safetensors file.
 
     The source directory stays untouched. The codec state dict is stored
     normalized exactly the way ArkttsModel.load_codec() consumes it.
+    ``quantize`` is "none" or "int8_convrot"; the int8 variant quantises the
+    eligible nn.Linear weights via the bundled architecture and records
+    audio8_quant=int8_convrot plus the audio8_int8 parameter map.
     """
 
     model_dir = Path(model_dir)
+    if quantize not in PACK_QUANTIZATIONS:
+        raise ValueError(
+            f"[Audio8] Unknown pack quantize mode {quantize!r}; "
+            f"expected one of {PACK_QUANTIZATIONS}")
     if not model_dir.is_dir():
         raise FileNotFoundError(f"[Audio8] Model directory not found: {model_dir}")
     for name in ("config.json", "codec.pth", "model.safetensors"):
@@ -134,6 +149,11 @@ def pack_model_directory(model_dir, target, overwrite=False) -> dict:
     if source_arch:
         metadata["audio8_source_arch_sha"] = json.dumps(source_arch)
 
+    quantized_count = 0
+    if quantize == INT8_CONVROT:
+        quantized_count = _apply_int8_convrot_to_tensors(model_dir, tensors, metadata)
+        metadata["audio8_quant"] = INT8_CONVROT
+
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.with_suffix(target.suffix + ".tmp")
     try:
@@ -147,13 +167,101 @@ def pack_model_directory(model_dir, target, overwrite=False) -> dict:
         "path": str(target),
         "model_tensors": sum(1 for key in tensors if key.startswith(MODEL_PREFIX)),
         "codec_tensors": sum(1 for key in tensors if key.startswith(CODEC_PREFIX)),
+        "quantized": quantized_count,
         "size_bytes": target.stat().st_size,
         "source_arch_sha": source_arch,
     }
-    logger.info("[Audio8] Packed %s -> %s (%d model + %d codec tensors, %.2f GiB)",
+    logger.info("[Audio8] Packed %s -> %s (%d model + %d codec tensors, %d int8, %.2f GiB)",
                 model_dir, target, info["model_tensors"], info["codec_tensors"],
-                info["size_bytes"] / 2**30)
+                quantized_count, info["size_bytes"] / 2**30)
     return info
+
+
+def _apply_int8_convrot_to_tensors(model_dir, tensors, metadata) -> int:
+    """Quantise the model.* linear weights inside ``tensors`` in place.
+
+    The bundled architecture materialises the directory's float weights so
+    the eligible-module rule matches the runtime exactly, quantises them on
+    the accelerator when available (the same device the ComfyUI runtime uses
+    for on-the-fly int8_convrot, which keeps both paths comparable) and
+    replaces each float entry with the packed int8 tensor plus a
+    "<path>.weight_scale" float32 companion.
+    """
+
+    from .audio8_arch.configuration_arktts import ArkttsConfig
+    from .audio8_arch.modeling_arktts import ArkttsModel
+    from .audio8_quantization import (collect_int8_convrot_state,
+                                      quantize_model_int8_convrot)
+
+    config = ArkttsConfig(**json.loads(metadata["audio8_config"]))
+    model = ArkttsModel(config)
+    # The ComfyUI runtime quantises after model.to(bfloat16); materialise in
+    # the same dtype so both paths see identical input bits and therefore
+    # produce identical packed tensors.
+    model.to(dtype=torch.bfloat16)
+    float_state = {key[len(MODEL_PREFIX):]: value
+                   for key, value in tensors.items() if key.startswith(MODEL_PREFIX)}
+    missing, unexpected = model.load_state_dict(float_state, strict=False)
+    buffer_names = {name for name, _ in model.named_buffers()}
+    real_missing = [name for name in missing if name not in buffer_names]
+    if unexpected or real_missing:
+        raise ValueError(
+            f"[Audio8] Cannot materialise {model_dir} for quantisation: "
+            f"missing={real_missing[:8]} unexpected={list(unexpected)[:8]}")
+    del float_state
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device=device)
+    count = quantize_model_int8_convrot(model, INT8_CONVROT_GROUP_SIZE)
+    if not count:
+        raise ValueError("[Audio8] No quantisable nn.Linear weights found")
+    quantized_tensors, int8_meta = collect_int8_convrot_state(model)
+    del model
+
+    for path, parts in quantized_tensors.items():
+        key = MODEL_PREFIX + path + ".weight"
+        if key not in tensors:
+            raise ValueError(f"[Audio8] Quantised module {path} has no source weight")
+        tensors[key] = parts[""]
+        tensors[MODEL_PREFIX + path + INT8_SCALE_SUFFIX] = parts["_scale"]
+    metadata["audio8_int8"] = json.dumps(int8_meta)
+    logger.info("[Audio8] Pack quantised %d nn.Linear weights to int8_convrot "
+                "(group %d) on %s", count, INT8_CONVROT_GROUP_SIZE, device)
+    return count
+
+
+def _split_int8_pack_state(pack_path, model_state, int8_meta) -> tuple:
+    """Split an int8_convrot pack state into (float state, layout entries).
+
+    Quantised modules keep the plain "<path>.weight" key as an int8 tensor
+    plus a "<path>.weight_scale" float32 companion; every entry must be
+    listed in the pack's audio8_int8 metadata map and vice versa.
+    """
+
+    entries = {}
+    float_state = {}
+    for key, value in model_state.items():
+        if key.endswith(INT8_SCALE_SUFFIX):
+            continue  # consumed with its .weight companion below
+        if key.endswith(".weight") and value.dtype == torch.int8:
+            path = key[:-len(".weight")]
+            scale_key = path + INT8_SCALE_SUFFIX
+            if scale_key not in model_state:
+                raise ValueError(
+                    f"[Audio8] Pack {pack_path}: int8 weight {key} has no "
+                    f"{INT8_SCALE_SUFFIX} companion")
+            if path not in int8_meta:
+                raise ValueError(
+                    f"[Audio8] Pack {pack_path}: no audio8_int8 entry for {path}")
+            entries[path] = {"": value, "_scale": model_state[scale_key]}
+        else:
+            float_state[key] = value
+    unlisted = set(int8_meta) - set(entries)
+    if unlisted:
+        raise ValueError(
+            f"[Audio8] Pack {pack_path}: audio8_int8 lists "
+            f"{sorted(unlisted)[:8]} without an int8 weight tensor")
+    return float_state, entries
 
 
 def read_pack_metadata(pack_path) -> dict:
@@ -169,12 +277,22 @@ def read_pack_metadata(pack_path) -> dict:
             f"[Audio8] {pack_path} is not an Audio8 pack v{PACK_FORMAT} "
             f"(audio8_format={metadata.get('audio8_format')!r}). Use the "
             "Audio8 Pack Model node to create it from a model directory.")
-    if metadata.get("audio8_quant", PACK_EXTENSION) != PACK_EXTENSION:
+    if metadata.get("audio8_quant", PACK_EXTENSION) not in PACK_QUANTIZATIONS:
         raise NotImplementedError(
             f"[Audio8] Pack {pack_path} declares quantization "
-            f"{metadata['audio8_quant']!r}; pre-quantised packs are not "
-            "loadable yet. Quantise with the loader's dtype=int8_convrot "
-            "option instead (on-the-fly).")
+            f"{metadata['audio8_quant']!r}; this node understands "
+            f"{PACK_EXTENSION!r} and {INT8_CONVROT!r} only. Quantise a "
+            "directory pack with the Audio8 Pack Model node instead.")
+    if metadata.get("audio8_quant") == INT8_CONVROT:
+        try:
+            int8_meta = json.loads(metadata.get("audio8_int8") or "")
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"[Audio8] Pack {pack_path} has no valid audio8_int8 metadata") from exc
+        if not isinstance(int8_meta, dict) or not int8_meta:
+            raise ValueError(
+                f"[Audio8] Pack {pack_path} declares {INT8_CONVROT} but carries "
+                "no audio8_int8 parameter map")
     missing_json = [key for key in PACK_REQUIRED_JSON if key not in metadata]
     if missing_json:
         raise ValueError(
@@ -248,6 +366,20 @@ def load_pack_model(pack_path, compute_dtype, device) -> tuple:
         raise ValueError(f"[Audio8] Pack {pack_path} has no "
                          f"{MODEL_PREFIX}* or {CODEC_PREFIX}* tensors")
 
+    # int8_convrot packs store eligible nn.Linear weights as int8 with a
+    # float32 scale companion; those modules get weight=None before the
+    # float state dict is applied and the layout is installed afterwards.
+    int8_meta = {}
+    int8_entries = {}
+    if metadata.get("audio8_quant") == INT8_CONVROT:
+        int8_meta = json.loads(metadata["audio8_int8"])
+        model_state, int8_entries = _split_int8_pack_state(pack_path, model_state, int8_meta)
+        for path in int8_entries:
+            module = model.get_submodule(path)
+            if not isinstance(module, torch.nn.Linear):
+                raise ValueError(f"[Audio8] Pack int8 target {path} is no nn.Linear")
+            module.weight = None
+
     # strict=False, then exact-set validation: only registered buffers that
     # the checkpoint legitimately omits (recomputed after load) may be missing.
     missing, unexpected = model.load_state_dict(model_state, strict=False)
@@ -259,6 +391,15 @@ def load_pack_model(pack_path, compute_dtype, device) -> tuple:
             f"unexpected={unexpected[:8]} missing={missing[:8]} "
             f"(missing outside known buffers: {real_missing[:8]}). The pack "
             "does not match the node's bundled architecture.")
+
+    if int8_entries:
+        from .audio8_quantization import apply_int8_convrot_state
+        installed = apply_int8_convrot_state(model, int8_entries, int8_meta, device,
+                                             dtype=compute_dtype)
+        if installed != len(int8_meta):
+            raise RuntimeError(
+                f"[Audio8] Pack {pack_path}: installed {installed} of "
+                f"{len(int8_meta)} int8 modules")
 
     # Transformers 5 materializes non-persistent buffers without their
     # constructor values; this explicit path recomputes them unconditionally.

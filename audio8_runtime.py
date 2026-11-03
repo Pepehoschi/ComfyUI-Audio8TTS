@@ -88,10 +88,15 @@ def _load_pack_bundle(pack_path, dtype, compute_dtype, device):
     model, processor = load_pack_model(pack_path, compute_dtype, device)
     validate_model_config(model.config, pack_path)
     model.to(device=device, dtype=compute_dtype)
-    quantization = "none"
-    if dtype == INT8_CONVROT:
+    # int8_convrot packs arrive with their layouts already installed by
+    # audio8_pack; re-quantising them would be a dtype-on-dtype no-op at best.
+    quantization = INT8_CONVROT if getattr(model, "audio8_int8_quantised", False) else "none"
+    if dtype == INT8_CONVROT and quantization != INT8_CONVROT:
         quantize_model_int8_convrot(model)
         quantization = INT8_CONVROT
+    elif dtype == INT8_CONVROT and quantization == INT8_CONVROT:
+        logger.info("[Audio8] Pack %s is already int8_convrot; dtype needs no "
+                    "on-the-fly quantisation", pack_path)
     return Audio8ModelBundle(model, processor, MODEL_ID, device, compute_dtype,
                              int(model.config.codec_sample_rate), quantization=quantization)
 

@@ -167,7 +167,14 @@ def resolve_pack(ckpt_name: str | None) -> Path:
 
 
 def pack_target_path(pack_name: str) -> Path:
-    """Target for new packs: audio8/ under the first diffusion_models root."""
+    """Target for new packs: audio8/ under the diffusion_models root that
+    already carries an audio8/ folder; falls back to the first root.
+
+    get_folder_paths lists built-in defaults (models/unet aliases
+    diffusion_models) before extra_model_paths.yaml roots, so picking
+    roots[0] would split old and new packs across two trees. Writing next
+    to the existing packs keeps one audio8/ folder per install.
+    """
 
     roots = folder_paths.get_folder_paths("diffusion_models")
     if not roots:
@@ -179,4 +186,6 @@ def pack_target_path(pack_name: str) -> Path:
         raise ValueError(f"[Audio8] Invalid pack_name: {pack_name!r}")
     if name.lower().endswith(PACK_SUFFIX):
         name = name[: -len(PACK_SUFFIX)]
-    return Path(roots[0]) / PACK_SUBFOLDER / (name + PACK_SUFFIX)
+    target_root = next((root for root in roots
+                        if (Path(root) / PACK_SUBFOLDER).is_dir()), roots[0])
+    return Path(target_root) / PACK_SUBFOLDER / (name + PACK_SUFFIX)

@@ -85,6 +85,12 @@ class Audio8PackModel:
             "overwrite": ("BOOLEAN", {
                 "default": False,
                 "tooltip": "Replace an existing pack file of the same name."}),
+            "quantize": (["none", "int8_convrot"], {
+                "default": "none",
+                "tooltip": "int8_convrot writes a separate pack with int8 "
+                           "ConvRot weights (audio8_quant=int8_convrot "
+                           "metadata); the file name then gets an "
+                           "-int8convrot suffix unless pack_name overrides it."}),
         }}
 
     RETURN_TYPES = ("STRING",)
@@ -93,14 +99,18 @@ class Audio8PackModel:
     CATEGORY = "audio/audio8"
     OUTPUT_NODE = True
 
-    def pack(self, model_name="auto", model_path="", pack_name="", overwrite=False):
+    def pack(self, model_name="auto", model_path="", pack_name="", overwrite=False,
+             quantize="none"):
         source = local_model_dir(model_name, model_path)
-        target = pack_target_path(pack_name or source.name)
+        name = pack_name or source.name
+        if quantize == "int8_convrot" and not pack_name:
+            name = f"{name}-int8convrot"
+        target = pack_target_path(name)
         if target.exists() and not overwrite:
             raise FileExistsError(
                 f"[Audio8] Pack {target} already exists; set overwrite to replace it.")
         target.parent.mkdir(parents=True, exist_ok=True)
-        pack_model_directory(source, target, overwrite=bool(overwrite))
+        pack_model_directory(source, target, overwrite=bool(overwrite), quantize=quantize)
         return (f"{PACK_SUBFOLDER}/{target.name}",)
 
 
