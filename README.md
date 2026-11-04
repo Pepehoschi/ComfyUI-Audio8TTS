@@ -1,25 +1,15 @@
 # ComfyUI Audio8 TTS
 
-Work in progress: native nodes for `Edge0/Audio8-TTS-Realistic-0.6b`.
+Native ComfyUI nodes for `Edge0/Audio8-TTS-Realistic-0.6b`.
 This repository is an independent ComfyUI integration, not a fork. Model and
 reference implementation are by Edge0: [Edge0-AI/Audio8_TTS](https://github.com/Edge0-AI/Audio8_TTS),
 base model: [Edge0/Audio8-TTS-Realistic-0.6b](https://huggingface.co/Edge0/Audio8-TTS-Realistic-0.6b).
 
-## Environment
+## Installation
 
-The project targets the existing ComfyUI cu128 installation. Do not separately install or replace Torch/Torchaudio.
+Install **Audio8 TTS** (`comfyui-audio8tts`) from the ComfyUI Registry through ComfyUI Manager, then restart ComfyUI. Install a model pack separately by following [Models](#models).
 
-`requirements.txt` deliberately lists only `transformers>=4.57.0,<6` and `safetensors>=0.4`. Torch, Torchaudio and NumPy stay out on purpose: ComfyUI owns the PyTorch/CUDA build of its installation (cu128 here), and a pip-resolved `torch` entry would replace that build with a generic CUDA wheel and break the install. That boundary also applies to any future `pyproject.toml` for registry publishing - keep dependencies dynamic from `requirements.txt` and never add a torch-family entry.
-
-The integration supports Transformers `>=4.57.0,<6`. The complete local model, processor and codec have been tested with Transformers 5.9.0 and Torch 2.8.0+cu128 on an RTX 4090. No packages were changed. Model files were copied from the existing HuggingFace cache.
-
-Load an Audio8 **pack** - one `.safetensors` file - through the
-`Audio8 Model Loader` node. Its required `ckpt_name` input is the same
-picker the native `Load Diffusion Model` node uses: it lists the files in
-the `diffusion_models` folders (`ComfyUI/models/diffusion_models` plus
-every root mapped in `extra_model_paths.yaml`, e.g. a Stability-Matrix
-shared-models folder), shows them as a searchable folder tree and
-serializes only the relative path into the workflow.
+For a manual install, clone the repository into `ComfyUI/custom_nodes` and install `requirements.txt` using the Python environment that runs ComfyUI. Audio8 requires Transformers `>=4.57.0,<6` and Safetensors `>=0.4`. It uses the PyTorch build provided by your ComfyUI installation.
 
 ## Models
 
@@ -29,8 +19,8 @@ The nodes load packs from
 
 | Pack | Direct download | Use when |
 | --- | --- | --- |
-| BF16 | [Audio8-TTS-Realistic-0.6b-BF16.safetensors](https://huggingface.co/Dhrog/Audio8-TTS-Realistic-0.6b-ComfyUI-Packs/resolve/main/Audio8-TTS-Realistic-0.6b-BF16.safetensors) | default: best quality, fastest (~54 tok/s with CUDA graphs `frame` scope) |
-| INT8 | [Audio8-TTS-Realistic-0.6b-int8convrot.safetensors](https://huggingface.co/Dhrog/Audio8-TTS-Realistic-0.6b-ComfyUI-Packs/resolve/main/Audio8-TTS-Realistic-0.6b-int8convrot.safetensors) | 16% smaller download, INT8 weights, bit-identical across sampling modes |
+| BF16 | [Audio8-TTS-Realistic-0.6b-BF16.safetensors](https://huggingface.co/Dhrog/Audio8-TTS-Realistic-0.6b-ComfyUI-Packs/resolve/main/Audio8-TTS-Realistic-0.6b-BF16.safetensors) | Recommended starting point. See [performance](#performance). |
+| INT8 | [Audio8-TTS-Realistic-0.6b-int8convrot.safetensors](https://huggingface.co/Dhrog/Audio8-TTS-Realistic-0.6b-ComfyUI-Packs/resolve/main/Audio8-TTS-Realistic-0.6b-int8convrot.safetensors) | About 16% smaller download than BF16. Uses INT8 ConvRot weights. |
 
 Place the downloaded file in an `audio8/` subfolder of any
 `diffusion_models` root, exactly:
@@ -64,18 +54,7 @@ downloading. It writes the pack to the `audio8/` subfolder of the
 ComfyUI/models/diffusion_models/audio8/Audio8-TTS-Realistic-0.6b-BF16.safetensors
 ```
 
-The source directory stays untouched and keeps serving as the converter
-input; after packing it has no other function inside the nodes and can
-remain on disk as a backup of the originals. Model-directory loading was
-removed from the loader: a pack carries every weight, config and
-tokenizer in one file, and loading instantiates the node's audited
-Apache-2.0 architecture copy (`audio8_arch/`, sha256 recorded in
-`audio8_arch/__init__.py`, attribution in `NOTICE.upstream`) directly and
-applies weights via `load_state_dict` - no `trust_remote_code`, no
-dynamic modules, no Auto* registration anywhere. Do not register the
-`audio8_arch` classes with the transformers Auto* factories:
-transformers 5.x then silently keeps constructor-initialized weights
-instead of loading the checkpoint (verified on 5.9.0).
+The loader uses the bundled Apache-2.0 architecture in `audio8_arch/` and reads weights directly from the pack. See `NOTICE.upstream` for attribution.
 
 ### Pack format
 
@@ -97,7 +76,7 @@ sample-identical to on-the-fly `dtype=int8_convrot` (maxdiff 0.0).
 
 ## Nodes
 
-Load `example_workflows/Audio8_Start.json` for a frontend canvas workflow (Model Loader, Load Voice, TTS, Save Audio). On this machine it selects `Audio8-Referenz.safetensors`, encoded from the supplied reference recording. Other installations must create their own voice preset first. `example_workflows/Audio8-Voice-Tags.json` shows per-segment emotional voices with a voice set and a tagged script. Both files appear in ComfyUI's Workflow Templates browser under `ComfyUI-Audio8TTS`; the same-name `.jpg` next to each JSON is the card preview (the frontend always requests `.jpg`).
+Load `example_workflows/Audio8_Start.json` for a frontend canvas workflow (Model Loader, Load Voice, TTS, Save Audio). Select your model pack and voice preset. To create a preset, connect Load Audio to Audio8 Encode Reference, enter the transcript, and connect the reference output to Audio8 Save Voice. `example_workflows/Audio8-Voice-Tags.json` shows per-segment emotional voices with a voice set and a tagged script. Both files appear in ComfyUI's Workflow Templates browser under `ComfyUI-Audio8TTS`; the same-name `.jpg` next to each JSON is the card preview (the frontend always requests `.jpg`).
 
 - Audio8 Model Loader: shared model and processor; `ckpt_name` picker over the `diffusion_models` folders; CPU uses FP32.
 - Audio8 Pack Model: folds a model directory into one `.safetensors` pack under `audio8/` in the `diffusion_models` folder that already holds one; `quantize="int8_convrot"` writes a separate `…-int8convrot.safetensors`.
@@ -110,12 +89,6 @@ Load `example_workflows/Audio8_Start.json` for a frontend canvas workflow (Model
 
 Connect the model loader to Encode Reference and TTS. Connect Load Audio to Encode Reference, then its reference output to TTS or Save Voice. For saved voices, connect Load Voice to TTS. Connect TTS to ComfyUI Save Audio.
 
-## Current verification
-
-Data validation, preset roundtrips and mocked loader/runtime tests run without weights. The first inference checks missed corrupted non-persistent RoPE buffers after Transformers 5 loading; nonempty audio alone was insufficient. The loader now rebuilds these buffers using Audio8's own helper. Codec encoding and decoding also disable TorchScript optimization locally because PyTorch 2.8.0+cu128 changed BF16 results after warmup. No global Torch configuration is changed. The pack format was verified end to end on a live server: the real model packed through the node, then two anchor generations through the pack were sample-identical to the directory baseline (524288 samples, maxdiff 0.0).
-
-The corrected CUDA/BF16 path passes repeated-encoding, preset-roundtrip and Direct-vs-Cached tests with the supplied recording, reaches EOS, and produces an audible-level waveform. Listening evaluation remains necessary. Restart ComfyUI after updating: its cached model and imported runtime otherwise retain the old behavior. The invalid generated test preset has been moved out of the voices directory.
-
 Long-text defaults are 130 target / 150 maximum characters, 180 ms between chunks and 350 ms at paragraph boundaries. One generator advances through the whole run, including retries. Reference codes are reused across chunks. Short text keeps the direct path; `chunking=disabled` sends the whole text to Audio8. Each decoded chunk receives a 110 ms fade-out before its pause; `fade_out_ms=0` disables it. Audio length is preserved. No trailing pause or automatic crossfade is added.
 
 ## Performance
@@ -126,26 +99,19 @@ It defaults to off. Enable it after restarting ComfyUI; it can be combined with 
 
 With `comfy_ops=True`, `attention_backend` selects `auto`, `flash`, or `comfy_kitchen_int8`. `auto` preserves ComfyUI's standard attention selection. The explicit choices optimize the slow decoder for this node's single-item processor prompts: cache keys end at the valid logical length, so a one-query decode needs no causal mask. Prefill and the fast decoder keep their masks. Flash is selected for slow decode; Kitchen INT8 is selected for prefill and slow decode. Kitchen's current single-query layout issue is handled by duplicating the independent query and taking its first result. Both choices require the respective installed ComfyUI backend.
 
-The installed cu128 setup executes real Flash and Kitchen INT8 CUDA attention kernels, verified by profiling the complete model. ComfyUI's warning about the Kitchen CUDA operation registry does not describe the availability of this separate attention entry point. Earlier blanket statements that no Kitchen CUDA acceleration was possible on cu128 were incorrect.
-
-Five interleaved runs on the RTX 4090, 32 fixed frames and graph setup included:
-
-| Path | Median generation time |
-| --- | --- |
-| Original model + CUDA Graphs | 1.172 s |
-| Comfy operations, auto + CUDA Graphs | 1.162 s |
-| Comfy operations, Flash + CUDA Graphs | 1.056 s |
-| Comfy operations, Kitchen INT8 + CUDA Graphs | 1.098 s |
-
-For speed without changing the sound, keep `comfy_ops=False` and use `cuda_graphs=True` with `cuda_graph_scope="frame"`: measured about four times faster and bit-identical audio. The attention backends add little on top and change the result: `flash` and `comfy_kitchen_int8` alter the sampled trajectory, and Kitchen INT8 quantises query, key and value. `cuda_graph_scope="frame"` is deliberately not combined with those two backends, the node logs a warning and falls back to `"fast"`. Model/codec loading and audio saving are outside these generation timings.
-
 The `cuda_graphs` input on Audio8 TTS is on by default and replays its decoder with CUDA Graphs; it is ignored on CPU. `cuda_graph_scope` selects the extent: `frame` (default) replays the whole frame, so one frame becomes two graph replays, `fast` replays only the fast decoder. The patch uses ComfyUI's ModelPatcher, preserves sampling, and releases graph tensors after each generation attempt; retries and chunks receive fresh graphs. It requires no Torch update or additional dependencies. Capture has an upfront cost, so very short outputs can benefit less.
 
-On the local RTX 4090 / Torch 2.8.0+cu128 / BF16 setup, a 75-frame utterance took a median 5.00 seconds with the standard path and 2.95 seconds with CUDA Graphs (two runs each, model already loaded, graph capture included). Generated codes were exactly equal. These are generation timings; initial model/codec loading and audio saving are separate.
+For the fastest measured configuration, enable CUDA Graphs, select `cuda_graph_scope="frame"`, and keep `comfy_ops=False`. Flash and Kitchen INT8 require compatible kernels. Selecting either with `frame` switches the graph scope to `fast` and logs a warning.
 
-Measured again on the same setup with 96 tokens and greedy decoding, so all three variants are directly comparable: 17.21 s without graphs, 8.28 s with `cuda_graph_scope=fast`, 2.82 s with `frame`. Generated codes stayed exactly equal to the ungraphed path. With the node default sampling the same comparison was 8.64 s without graphs against 1.99 s with `frame`. Sampling draws its random numbers inside the graph, so one seed yields other codes than the ungraphed path while a different seed still changes the output. `frame` reserves more graph memory per generation attempt.
+The benchmark used a BF16 pack on an RTX 4090 with PyTorch 2.8.0+cu128, a 256-token budget, and a cached model and voice. Results vary by hardware, backend and text.
 
-Verified end to end through the running server, saved audio measured instead of codes (256 token budget, same text and seed, model and voice cached): 13.7 tokens/s without graphs, 53.9 with `cuda_graph_scope="frame"`, 28.0 with `comfy_ops=True attention_backend=flash` and `"fast"`. The three configurations without a maskless attention backend produced **bit-identical waveforms**, repeats included. High frequency energy of every clean sample sat between 0.22 and 0.28, so a listener comparison is meaningful; `frame` reserves more graph memory per generation attempt.
+| Configuration | Generation rate |
+| --- | ---: |
+| CUDA Graphs disabled | 13.7 tokens/s |
+| Frame CUDA Graphs | 53.9 tokens/s |
+| Flash attention with fast CUDA Graphs | 28.0 tokens/s |
+
+Backend and sampling choices can change the generated audio. Frame graphs also use more VRAM during generation.
 
 ## Limitations
 
@@ -154,5 +120,4 @@ Verified end to end through the running server, saved audio measured instead of 
 - Model, processor and codec stay in the node cache, not in ComfyUI's memory manager:
   unload and empty-cache operations do not release them, and their VRAM is invisible
   to ComfyUI's memory accounting until the process exits.
-- The model loader reloads when the checkpoint directory changes (file count, total
-  size or newest modification time); a swapped checkpoint is picked up on the next run.
+- The model loader checks the selected pack file size and modification time to detect changes.
