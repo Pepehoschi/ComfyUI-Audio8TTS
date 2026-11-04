@@ -1,6 +1,8 @@
 # ComfyUI Audio8 TTS
 
 Work in progress: native nodes for `Edge0/Audio8-TTS-Realistic-0.6b`.
+Upstream project by Edge0: [Edge0-AI/Audio8_TTS](https://github.com/Edge0-AI/Audio8_TTS),
+base model: [Edge0/Audio8-TTS-Realistic-0.6b](https://huggingface.co/Edge0/Audio8-TTS-Realistic-0.6b).
 
 ## Environment
 
@@ -45,9 +47,11 @@ metadata in one file). Quantisation is chosen from the pack's
 `audio8_quant` metadata key, never from the file name, so renaming the
 pack only changes how it is labelled.
 
-The packs are derived from `Edge0/Audio8-TTS-Realistic-0.6b` (Apache-2.0;
-`LICENSE` and `NOTICE` ship in the HF repo). A community re-packaging,
-not an official Edge0 release.
+The packs are derived from
+[`Edge0/Audio8-TTS-Realistic-0.6b`](https://huggingface.co/Edge0/Audio8-TTS-Realistic-0.6b)
+(Apache-2.0; `LICENSE` and `NOTICE` ship in the HF repo; upstream project:
+[Edge0-AI/Audio8_TTS](https://github.com/Edge0-AI/Audio8_TTS)). A community
+re-packaging, not an official Edge0 release.
 
 Create a pack once from a complete model directory (the HuggingFace
 download form: `config.json`, `codec.pth`, weights, tokenizer and custom
